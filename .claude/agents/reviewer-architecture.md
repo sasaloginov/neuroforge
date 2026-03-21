@@ -41,9 +41,14 @@ allowedTools:
 - [ ] Naming conventions соблюдены (camelCase файлы, PascalCase классы)
 - [ ] Один класс/модуль — одна ответственность
 
-#### Паттерны
-- [ ] SOLID принципы
-- [ ] DRY — нет дублирования логики
+#### DRY / KISS / SOLID
+- [ ] **DRY** — нет дублирования логики (одинаковый код в двух местах = finding)
+- [ ] **KISS** — нет overengineering (лишних абстракций, преждевременных обобщений, сложности без нужды)
+- [ ] **S** — Single Responsibility: каждый модуль/класс имеет одну причину для изменений
+- [ ] **O** — Open/Closed: расширение без модификации существующего кода
+- [ ] **L** — Liskov Substitution: реализации портов взаимозаменяемы
+- [ ] **I** — Interface Segregation: порты узкие, нет "жирных" интерфейсов
+- [ ] **D** — Dependency Inversion: зависимости от абстракций, не от реализаций
 - [ ] Entities не анемичные (содержат бизнес-логику)
 - [ ] Value Objects используются где уместно
 
@@ -84,6 +89,8 @@ allowedTools:
 - [x/✗] DDD layers isolation
 - [x/✗] Dependency rule
 - [x/✗] Naming conventions
+- [x/✗] DRY — нет дублирования
+- [x/✗] KISS — нет overengineering
 - [x/✗] SOLID compliance
 - [x/✗] Test architecture
 ```

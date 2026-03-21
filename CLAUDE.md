@@ -50,6 +50,16 @@ src/
 4. **Composition Root** (`src/index.js`) — единственное место DI
 5. Dependency flow: Infrastructure → Application → Domain
 
+## Design Principles
+- **DRY** (Don't Repeat Yourself) — выноси повторяющуюся логику в общие функции/модули. Дублирование кода — сигнал к рефакторингу.
+- **KISS** (Keep It Simple, Stupid) — выбирай простейшее работающее решение. Не усложняй без явной необходимости. Абстракция оправдана только когда упрощает понимание или поддержку.
+- **SOLID:**
+  - **S** — Single Responsibility: один модуль/класс — одна причина для изменений
+  - **O** — Open/Closed: расширяй через новые модули, не правь существующие без нужды
+  - **L** — Liskov Substitution: реализации портов взаимозаменяемы
+  - **I** — Interface Segregation: порты узкие и специализированные, не раздувай интерфейсы
+  - **D** — Dependency Inversion: domain зависит от абстракций (портов), не от реализаций
+
 ## Code Conventions
 - ES modules (`import`/`export`)
 - Файлы в camelCase: `taskService.js`
