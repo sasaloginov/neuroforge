@@ -29,6 +29,13 @@ export class PgUserRepo {
     );
   }
 
+  async findAll() {
+    const { rows } = await getPool().query(
+      'SELECT * FROM users ORDER BY created_at',
+    );
+    return rows.map(User.fromRow);
+  }
+
   async delete(id) {
     await getPool().query('DELETE FROM users WHERE id = $1', [id]);
   }

@@ -11,6 +11,14 @@ export class PgApiKeyRepo {
     return rows.length ? ApiKey.fromRow(rows[0]) : null;
   }
 
+  async findById(id) {
+    const { rows } = await getPool().query(
+      'SELECT * FROM api_keys WHERE id = $1',
+      [id],
+    );
+    return rows.length ? ApiKey.fromRow(rows[0]) : null;
+  }
+
   async findByUserId(userId) {
     const { rows } = await getPool().query(
       'SELECT * FROM api_keys WHERE user_id = $1 ORDER BY created_at',
