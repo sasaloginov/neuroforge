@@ -22,7 +22,7 @@ export class ManagerDecision {
     const completedRun = await this.#runRepo.findById(completedRunId);
     if (!completedRun) throw new RunNotFoundError(completedRunId);
 
-    const terminalStatuses = ['done', 'failed', 'timeout'];
+    const terminalStatuses = ['done', 'failed', 'timeout', 'interrupted'];
     if (!terminalStatuses.includes(completedRun.status)) {
       throw new InvalidStateError(`Run is not in terminal state: ${completedRun.status}`);
     }
@@ -167,7 +167,7 @@ export class ManagerDecision {
  */
 function buildManagerPrompt(task, runs) {
   const completedRuns = runs
-    .filter(r => ['done', 'failed', 'timeout'].includes(r.status))
+    .filter(r => ['done', 'failed', 'timeout', 'interrupted'].includes(r.status))
     .sort((a, b) => a.createdAt - b.createdAt);
 
   const runsReport = completedRuns
