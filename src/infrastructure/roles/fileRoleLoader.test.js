@@ -40,12 +40,11 @@ describe('FileRoleLoader', () => {
       expect(analyst.systemPrompt).toContain('аналитик');
     });
 
-    it('should parse manager role with correct tools', async () => {
+    it('should parse manager role with correct config', async () => {
       const roles = await loadRoles(ROLES_DIR);
       const manager = roles.find((r) => r.name === 'manager');
       expect(manager.model).toBe('opus');
-      expect(manager.allowedTools).toContain('Read');
-      expect(manager.allowedTools).toContain('Glob');
+      expect(manager.allowedTools).toEqual([]);
     });
   });
 

@@ -8,14 +8,16 @@ export class ManagerDecision {
   #roleRegistry;
   #callbackSender;
   #runRepo;
+  #logger;
 
-  constructor({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo }) {
+  constructor({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, logger }) {
     this.#runService = runService;
     this.#taskService = taskService;
     this.#chatEngine = chatEngine;
     this.#roleRegistry = roleRegistry;
     this.#callbackSender = callbackSender;
     this.#runRepo = runRepo;
+    this.#logger = logger || console;
   }
 
   async execute({ completedRunId }) {
@@ -61,8 +63,11 @@ export class ManagerDecision {
       return { action: 'fail_task', details: { reason: error.message } };
     }
 
+    this.#logger.info('[ManagerDecision] Manager response (first 500 chars): %s', result.response.substring(0, 500));
+
     const decision = parseManagerDecision(result.response);
     if (!decision) {
+      this.#logger.error('[ManagerDecision] Failed to parse decision from response (first 1000 chars): %s', result.response.substring(0, 1000));
       await this.#taskService.failTask(task.id);
       if (task.callbackUrl) {
         await this.#callbackSender.send(
@@ -196,19 +201,46 @@ ${runsReport}
 
 /**
  * Parse manager's JSON decision from response text.
+ * Tries multiple strategies: full response as JSON, code block extraction, greedy regex.
  */
 function parseManagerDecision(response) {
-  const jsonMatch = response.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) return null;
+  const validActions = ['spawn_run', 'ask_owner', 'complete_task', 'fail_task'];
 
-  try {
-    const decision = JSON.parse(jsonMatch[0]);
-    const validActions = ['spawn_run', 'ask_owner', 'complete_task', 'fail_task'];
-    if (!validActions.includes(decision.action)) return null;
-    return decision;
-  } catch {
+  function tryParse(text) {
+    try {
+      const decision = JSON.parse(text);
+      if (decision && validActions.includes(decision.action)) return decision;
+    } catch { /* ignore */ }
     return null;
   }
+
+  // Strategy 1: entire response is JSON
+  const trimmed = response.trim();
+  const direct = tryParse(trimmed);
+  if (direct) return direct;
+
+  // Strategy 2: JSON in a code block (```json ... ``` or ``` ... ```)
+  const codeBlockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  if (codeBlockMatch) {
+    const fromBlock = tryParse(codeBlockMatch[1].trim());
+    if (fromBlock) return fromBlock;
+  }
+
+  // Strategy 3: find JSON object containing "action" key
+  const actionMatch = trimmed.match(/\{[^{}]*"action"\s*:\s*"[^"]*"[^{}]*\}/);
+  if (actionMatch) {
+    const fromAction = tryParse(actionMatch[0]);
+    if (fromAction) return fromAction;
+  }
+
+  // Strategy 4: last resort — greedy match from first { to last }
+  const greedyMatch = trimmed.match(/\{[\s\S]*\}/);
+  if (greedyMatch) {
+    const fromGreedy = tryParse(greedyMatch[0]);
+    if (fromGreedy) return fromGreedy;
+  }
+
+  return null;
 }
 
 export { buildManagerPrompt, parseManagerDecision };

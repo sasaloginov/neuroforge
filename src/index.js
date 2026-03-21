@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { readFile } from 'node:fs/promises';
 
 import { createPool, closePool } from './infrastructure/persistence/pg.js';
 import { loadRoles } from './infrastructure/roles/fileRoleLoader.js';
@@ -17,6 +18,7 @@ import { CreateTask } from './application/CreateTask.js';
 import { ProcessRun } from './application/ProcessRun.js';
 import { ManagerDecision } from './application/ManagerDecision.js';
 import { GetTaskStatus } from './application/GetTaskStatus.js';
+import { GetRunDetail } from './application/GetRunDetail.js';
 import { CancelTask } from './application/CancelTask.js';
 import { ReplyToQuestion } from './application/ReplyToQuestion.js';
 import { createServer } from './infrastructure/http/server.js';
@@ -45,7 +47,12 @@ async function main() {
     process.exit(1);
   }
 
-  // 2. PG pool
+  // 2. Read version from package.json (once at startup)
+  const packageJsonPath = new URL('../package.json', import.meta.url).pathname;
+  const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8'));
+  const version = packageJson.version;
+
+  // 3. PG pool
   createPool(config.databaseUrl);
 
   // 3. Roles
@@ -75,8 +82,9 @@ async function main() {
   // 7. Use cases
   const createTask = new CreateTask({ taskService, runService, roleRegistry, projectRepo, callbackSender });
   const processRun = new ProcessRun({ runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender });
-  const managerDecision = new ManagerDecision({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo });
+  const managerDecision = new ManagerDecision({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, logger: console });
   const getTaskStatus = new GetTaskStatus({ taskService, runRepo });
+  const getRunDetail = new GetRunDetail({ taskService, runRepo });
   const cancelTask = new CancelTask({ taskService, runRepo, callbackSender });
   const replyToQuestion = new ReplyToQuestion({ taskService, runService, runRepo, callbackSender });
 
@@ -97,9 +105,9 @@ async function main() {
     database: new DatabaseHealthChecker({ pool: getPool() }),
     scheduler: new SchedulerHealthChecker({ scheduler }),
   };
-  const useCases = { createTask, getTaskStatus, cancelTask, replyToQuestion };
+  const useCases = { createTask, getTaskStatus, getRunDetail, cancelTask, replyToQuestion };
   const repos = { apiKeyRepo, userRepo, projectRepo, taskRepo, runRepo };
-  const server = await createServer({ useCases, repos, checkers, version: '1.0.0', startedAt });
+  const server = await createServer({ useCases, repos, checkers, version, startedAt });
 
   // 10. Graceful shutdown
   setupShutdown({ server, scheduler });

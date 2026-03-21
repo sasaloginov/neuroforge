@@ -33,6 +33,9 @@ export async function createServer({ useCases, repos, checkers, version, started
     app.get('/health', async () => ({ status: 'ok' }));
   }
 
+  // Version endpoint (before auth hook)
+  app.get('/version', async () => ({ version: version ?? '0.0.0' }));
+
   // Auth middleware (onRequest hook)
   app.addHook('onRequest', authMiddleware({
     apiKeyRepo: repos.apiKeyRepo,

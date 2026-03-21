@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 export function authMiddleware({ apiKeyRepo, userRepo }) {
   return async function authenticate(request, reply) {
     // Skip auth for health check
-    if (request.url === '/health') return;
+    if (request.url === '/health' || request.url === '/version') return;
 
     const authHeader = request.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {

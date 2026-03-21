@@ -25,6 +25,7 @@ export class GetTaskStatus {
         id: r.id,
         roleName: r.roleName,
         status: r.status,
+        response: r.response,
         startedAt: r.startedAt,
         finishedAt: r.finishedAt,
         durationMs: r.durationMs,

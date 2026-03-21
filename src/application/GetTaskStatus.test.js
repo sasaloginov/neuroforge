@@ -58,6 +58,7 @@ describe('GetTaskStatus', () => {
       id: 'run-1',
       roleName: 'analyst',
       status: 'done',
+      response: 'Secret response',
       startedAt: expect.any(Date),
       finishedAt: expect.any(Date),
       durationMs: 300000,
@@ -91,10 +92,10 @@ describe('GetTaskStatus', () => {
     expect(result.runs[1].roleName).toBe('developer');
   });
 
-  it('does not expose sensitive fields (prompt, response) in runs', async () => {
+  it('does not expose prompt field in runs', async () => {
     const result = await getTaskStatus.execute({ taskId: 'task-1' });
 
     expect(result.runs[0]).not.toHaveProperty('prompt');
-    expect(result.runs[0]).not.toHaveProperty('response');
+    expect(result.runs[0]).toHaveProperty('response');
   });
 });

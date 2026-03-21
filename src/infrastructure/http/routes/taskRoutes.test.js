@@ -2,12 +2,14 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createTestServer, authHeader } from '../testHelper.js';
 import { taskRoutes } from './taskRoutes.js';
 import { TaskNotFoundError } from '../../../domain/errors/TaskNotFoundError.js';
+import { RunNotFoundError } from '../../../domain/errors/RunNotFoundError.js';
 import { InvalidStateError } from '../../../domain/errors/InvalidStateError.js';
 import { InvalidTransitionError } from '../../../domain/errors/InvalidTransitionError.js';
 import { ProjectNotFoundError } from '../../../domain/errors/ProjectNotFoundError.js';
 
 const PROJECT_ID = '00000000-0000-0000-0000-000000000100';
 const TASK_ID = '00000000-0000-0000-0000-000000000200';
+const RUN_ID = '00000000-0000-0000-0000-000000000300';
 
 function buildUseCases(overrides = {}) {
   return {
@@ -26,6 +28,23 @@ function buildUseCases(overrides = {}) {
           updatedAt: new Date('2025-01-01').toISOString(),
         },
         runs: [],
+      }),
+    },
+    getRunDetail: {
+      execute: vi.fn().mockResolvedValue({
+        task: { id: TASK_ID, projectId: PROJECT_ID },
+        run: {
+          id: RUN_ID,
+          taskId: TASK_ID,
+          roleName: 'analyst',
+          status: 'done',
+          response: 'Analysis result',
+          error: null,
+          startedAt: new Date('2025-01-01T10:00:00').toISOString(),
+          finishedAt: new Date('2025-01-01T10:05:00').toISOString(),
+          durationMs: 300000,
+          createdAt: new Date('2025-01-01').toISOString(),
+        },
       }),
     },
     replyToQuestion: {
@@ -195,6 +214,57 @@ describe('taskRoutes', () => {
       });
 
       expect(res.statusCode).toBe(404);
+    });
+  });
+
+  // GET /tasks/:id/runs/:runId
+  describe('GET /tasks/:id/runs/:runId', () => {
+    it('returns 200 with run detail', async () => {
+      const { app: a } = setup();
+      app = a;
+      await app.ready();
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/tasks/${TASK_ID}/runs/${RUN_ID}`,
+        headers: authHeader(),
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().run.id).toBe(RUN_ID);
+      expect(res.json().run.response).toBe('Analysis result');
+    });
+
+    it('returns 404 when not found', async () => {
+      const { app: a } = setup({
+        getRunDetail: {
+          execute: vi.fn().mockRejectedValue(new RunNotFoundError(RUN_ID)),
+        },
+      });
+      app = a;
+      await app.ready();
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/tasks/${TASK_ID}/runs/${RUN_ID}`,
+        headers: authHeader(),
+      });
+
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('validates UUID params', async () => {
+      const { app: a } = setup();
+      app = a;
+      await app.ready();
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/tasks/not-uuid/runs/also-not-uuid',
+        headers: authHeader(),
+      });
+
+      expect(res.statusCode).toBe(400);
     });
   });
 

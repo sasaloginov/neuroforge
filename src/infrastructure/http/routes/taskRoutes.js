@@ -62,6 +62,17 @@ const replySchema = {
   },
 };
 
+const getRunSchema = {
+  params: {
+    type: 'object',
+    required: ['id', 'runId'],
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      runId: { type: 'string', format: 'uuid' },
+    },
+  },
+};
+
 const cancelSchema = {
   params: {
     type: 'object',
@@ -94,6 +105,15 @@ export function taskRoutes({ useCases }) {
       const result = await useCases.getTaskStatus.execute({ taskId: request.params.id });
       assertProjectScope(request.apiKey, result.task.projectId);
       return reply.send(result);
+    });
+
+    fastify.get('/tasks/:id/runs/:runId', { schema: getRunSchema }, async (request, reply) => {
+      const result = await useCases.getRunDetail.execute({
+        taskId: request.params.id,
+        runId: request.params.runId,
+      });
+      assertProjectScope(request.apiKey, result.task.projectId);
+      return reply.send({ run: result.run });
     });
 
     fastify.post('/tasks/:id/reply', { schema: replySchema }, async (request, reply) => {

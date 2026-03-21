@@ -34,15 +34,16 @@ export class ProcessRun {
       const task = run.taskId ? await this.#taskRepo.findById(run.taskId) : null;
       const projectId = task ? task.projectId : run.taskId;
 
-      // Find or create session
+      // Find or create session record
       let session = await this.#sessionRepo.findByProjectAndRole(projectId, run.roleName);
       if (!session) {
         session = Session.create({ projectId, roleName: run.roleName, cliSessionId: null });
         await this.#sessionRepo.save(session);
       }
 
+      // Only pass sessionId for continuation if explicitly set on the run
       result = await this.#chatEngine.runPrompt(run.roleName, run.prompt, {
-        sessionId: session.cliSessionId,
+        sessionId: run.sessionId || null,
         timeoutMs: role.timeoutMs,
       });
 

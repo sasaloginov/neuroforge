@@ -68,7 +68,7 @@ describe('ProcessRun', () => {
     expect(runRepo.takeNext).toHaveBeenCalled();
     expect(roleRegistry.get).toHaveBeenCalledWith('analyst');
     expect(chatEngine.runPrompt).toHaveBeenCalledWith('analyst', 'Analyze this task', {
-      sessionId: 'cli-session-old',
+      sessionId: null,
       timeoutMs: 300000,
     });
     expect(runService.complete).toHaveBeenCalledWith('run-1', 'Analysis result');
@@ -131,12 +131,13 @@ describe('ProcessRun', () => {
     }));
   });
 
-  it('reuses existing session', async () => {
+  it('reuses existing session record without passing cliSessionId', async () => {
     await processRun.execute();
 
     expect(sessionRepo.findByProjectAndRole).toHaveBeenCalledWith('project-1', 'analyst');
+    // sessionId comes from run.sessionId (null), not from session.cliSessionId
     expect(chatEngine.runPrompt).toHaveBeenCalledWith('analyst', 'Analyze this task', expect.objectContaining({
-      sessionId: 'cli-session-old',
+      sessionId: null,
     }));
   });
 
