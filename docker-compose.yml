@@ -1,0 +1,18 @@
+services:
+  neuroforge:
+    build: .
+    network_mode: host
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://bot:bot@localhost:5432/neuroforge}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-opus}
+      - MANAGER_INTERVAL_MS=${MANAGER_INTERVAL_MS:-10000}
+      - MANAGER_MAX_CONCURRENT=${MANAGER_MAX_CONCURRENT:-3}
+      - MANAGER_ENABLED=${MANAGER_ENABLED:-true}
+    volumes:
+      - ${WORKSPACE_DIR:-/root/dev}:/workspace
+
+  ollama:
+    image: ollama/ollama
+    profiles: ["with-ollama"]
+    ports:
+      - "11434:11434"

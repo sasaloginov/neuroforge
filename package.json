@@ -1,0 +1,31 @@
+{
+  "name": "neuroforge",
+  "version": "0.1.0",
+  "description": "API-сервер для оркестрации AI-агентов",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "migrate": "knex migrate:latest --knexfile src/infrastructure/persistence/knexfile.js",
+    "migrate:rollback": "knex migrate:rollback --knexfile src/infrastructure/persistence/knexfile.js",
+    "migrate:make": "knex migrate:make --knexfile src/infrastructure/persistence/knexfile.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.2",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.1",
+    "knex": "^3.1.0",
+    "pg": "^8.13.3",
+    "pino": "^9.6.0",
+    "uuid": "^11.1.0",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.1.1"
+  }
+}
