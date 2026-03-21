@@ -22,6 +22,8 @@ import { ReplyToQuestion } from './application/ReplyToQuestion.js';
 import { createServer } from './infrastructure/http/server.js';
 import { createWorker } from './infrastructure/scheduler/worker.js';
 import { ManagerScheduler } from './infrastructure/scheduler/managerScheduler.js';
+import { DatabaseHealthChecker, SchedulerHealthChecker } from './infrastructure/http/healthCheckers.js';
+import { getPool } from './infrastructure/persistence/pg.js';
 
 async function main() {
   // 1. Config
@@ -78,12 +80,7 @@ async function main() {
   const cancelTask = new CancelTask({ taskService, runRepo, callbackSender });
   const replyToQuestion = new ReplyToQuestion({ taskService, runService, runRepo, callbackSender });
 
-  // 8. HTTP server
-  const useCases = { createTask, getTaskStatus, cancelTask, replyToQuestion };
-  const repos = { apiKeyRepo, userRepo, projectRepo, taskRepo, runRepo };
-  const server = await createServer({ useCases, repos });
-
-  // 9. Worker + Scheduler
+  // 8. Worker + Scheduler
   const worker = createWorker({ processRun, managerDecision, logger: console });
   const scheduler = new ManagerScheduler({
     worker,
@@ -93,6 +90,16 @@ async function main() {
     logger: console,
     config: config.manager,
   });
+
+  // 9. Health checkers + HTTP server
+  const startedAt = new Date();
+  const checkers = {
+    database: new DatabaseHealthChecker({ pool: getPool() }),
+    scheduler: new SchedulerHealthChecker({ scheduler }),
+  };
+  const useCases = { createTask, getTaskStatus, cancelTask, replyToQuestion };
+  const repos = { apiKeyRepo, userRepo, projectRepo, taskRepo, runRepo };
+  const server = await createServer({ useCases, repos, checkers, version: '1.0.0', startedAt });
 
   // 10. Graceful shutdown
   setupShutdown({ server, scheduler });
