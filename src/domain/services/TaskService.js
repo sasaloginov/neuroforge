@@ -18,49 +18,49 @@ export class TaskService {
   }
 
   async advanceTask(taskId) {
-    const task = await this.#getTask(taskId);
+    const task = await this.getTask(taskId);
     task.transitionTo(Task.STATUSES.IN_PROGRESS);
     await this.#taskRepo.save(task);
     return task;
   }
 
   async requestReply(taskId) {
-    const task = await this.#getTask(taskId);
+    const task = await this.getTask(taskId);
     task.transitionTo(Task.STATUSES.WAITING_REPLY);
     await this.#taskRepo.save(task);
     return task;
   }
 
   async resumeAfterReply(taskId) {
-    const task = await this.#getTask(taskId);
+    const task = await this.getTask(taskId);
     task.transitionTo(Task.STATUSES.IN_PROGRESS);
     await this.#taskRepo.save(task);
     return task;
   }
 
   async completeTask(taskId) {
-    const task = await this.#getTask(taskId);
+    const task = await this.getTask(taskId);
     task.transitionTo(Task.STATUSES.DONE);
     await this.#taskRepo.save(task);
     return task;
   }
 
   async failTask(taskId) {
-    const task = await this.#getTask(taskId);
+    const task = await this.getTask(taskId);
     task.transitionTo(Task.STATUSES.FAILED);
     await this.#taskRepo.save(task);
     return task;
   }
 
   async cancelTask(taskId) {
-    const task = await this.#getTask(taskId);
+    const task = await this.getTask(taskId);
     task.transitionTo(Task.STATUSES.CANCELLED);
     await this.#taskRepo.save(task);
     return task;
   }
 
   async incrementRevision(taskId) {
-    const task = await this.#getTask(taskId);
+    const task = await this.getTask(taskId);
     task.incrementRevision();
     if (task.revisionCount > MAX_REVISIONS) {
       throw new RevisionLimitError(taskId, MAX_REVISIONS);
@@ -69,9 +69,10 @@ export class TaskService {
     return task;
   }
 
-  async #getTask(taskId) {
+  async getTask(taskId) {
     const task = await this.#taskRepo.findById(taskId);
     if (!task) throw new TaskNotFoundError(taskId);
     return task;
   }
+
 }
