@@ -16,6 +16,18 @@ describe('Task', () => {
   });
 
   describe('state machine', () => {
+    it('backlog → pending', () => {
+      const task = Task.create({ ...defaults, status: 'backlog' });
+      task.transitionTo('pending');
+      expect(task.status).toBe('pending');
+    });
+
+    it('backlog → cancelled', () => {
+      const task = Task.create({ ...defaults, status: 'backlog' });
+      task.transitionTo('cancelled');
+      expect(task.status).toBe('cancelled');
+    });
+
     it('pending → in_progress', () => {
       const task = Task.create(defaults);
       task.transitionTo('in_progress');
@@ -126,10 +138,34 @@ describe('Task', () => {
       expect(restored.seqNumber).toBe(7);
     });
 
-    it('does not have projectPrefix — shortId is computed in application layer', () => {
-      const task = Task.create({ ...defaults, seqNumber: 3 });
-      expect(task).not.toHaveProperty('projectPrefix');
-      expect(task).not.toHaveProperty('shortId');
+    it('roundtrips branchName through toRow/fromRow', () => {
+      const task = Task.create(defaults);
+      task.branchName = 'NF-5/my-feature';
+      const row = task.toRow();
+      expect(row.branch_name).toBe('NF-5/my-feature');
+      const restored = Task.fromRow(row);
+      expect(restored.branchName).toBe('NF-5/my-feature');
+    });
+
+    it('branchName defaults to null', () => {
+      const task = Task.create(defaults);
+      expect(task.branchName).toBeNull();
+    });
+  });
+
+  describe('generateBranchName', () => {
+    it('generates slug from shortId and title', () => {
+      expect(Task.generateBranchName('NF-5', 'Add queue and git branches')).toBe('NF-5/add-queue-and-git-branches');
+    });
+
+    it('strips special characters', () => {
+      expect(Task.generateBranchName('BOT-3', 'Fix: slash/backslash!')).toBe('BOT-3/fix-slashbackslash');
+    });
+
+    it('trims slug to 50 chars', () => {
+      const long = 'A'.repeat(60);
+      const result = Task.generateBranchName('NF-1', long);
+      expect(result.split('/')[1].length).toBeLessThanOrEqual(50);
     });
   });
 });

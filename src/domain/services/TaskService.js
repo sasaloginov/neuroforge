@@ -11,8 +11,8 @@ export class TaskService {
     this.#taskRepo = taskRepo;
   }
 
-  async createTask({ projectId, title, description, callbackUrl, callbackMeta }) {
-    const task = Task.create({ projectId, title, description, callbackUrl, callbackMeta });
+  async createTask({ projectId, title, description, callbackUrl, callbackMeta, status }) {
+    const task = Task.create({ projectId, title, description, callbackUrl, callbackMeta, status });
     await this.#taskRepo.saveWithSeqNumber(task);
     return task;
   }
@@ -85,6 +85,33 @@ export class TaskService {
   async restartTask(taskId) {
     const task = await this.getTask(taskId);
     task.transitionTo(Task.STATUSES.IN_PROGRESS);
+    await this.#taskRepo.save(task);
+    return task;
+  }
+
+  /** Move task from backlog to pending (enqueue). */
+  async enqueueTask(taskId) {
+    const task = await this.getTask(taskId);
+    task.transitionTo(Task.STATUSES.PENDING);
+    await this.#taskRepo.save(task);
+    return task;
+  }
+
+  /** Check if project has any active task. */
+  async hasActiveTask(projectId) {
+    return this.#taskRepo.hasActiveTask(projectId);
+  }
+
+  /** Find oldest pending task for a project. */
+  async findOldestPending(projectId) {
+    return this.#taskRepo.findOldestPending(projectId);
+  }
+
+  /** Set branch name on a task. */
+  async setBranchName(taskId, branchName) {
+    const task = await this.getTask(taskId);
+    task.branchName = branchName;
+    task.updatedAt = new Date();
     await this.#taskRepo.save(task);
     return task;
   }

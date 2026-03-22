@@ -7,6 +7,7 @@ export class ManagerScheduler {
   #runRepo;
   #runService;
   #roleRegistry;
+  #startPendingTask;
   #logger;
   #intervalMs;
   #maxConcurrent;
@@ -22,17 +23,19 @@ export class ManagerScheduler {
    * @param {object} deps.runRepo — { findRunning() }
    * @param {object} deps.runService — { interrupt(), timeout() }
    * @param {object} deps.roleRegistry — { get(name) }
+   * @param {object} [deps.startPendingTask] — { checkAndStartAll() }
    * @param {object} deps.logger
    * @param {object} deps.config
    * @param {number} [deps.config.intervalMs=10000]
    * @param {number} [deps.config.maxConcurrent=3]
    * @param {boolean} [deps.config.enabled=true]
    */
-  constructor({ worker, runRepo, runService, roleRegistry, logger, config = {} }) {
+  constructor({ worker, runRepo, runService, roleRegistry, startPendingTask, logger, config = {} }) {
     this.#worker = worker;
     this.#runRepo = runRepo;
     this.#runService = runService;
     this.#roleRegistry = roleRegistry;
+    this.#startPendingTask = startPendingTask || null;
     this.#logger = logger;
     this.#intervalMs = config.intervalMs ?? 10000;
     this.#maxConcurrent = config.maxConcurrent ?? 3;
@@ -78,7 +81,7 @@ export class ManagerScheduler {
     this.#logger.info('[Scheduler] Stopped');
   }
 
-  /** One tick: check timeouts, fill worker slots. */
+  /** One tick: check timeouts, start pending tasks, fill worker slots. */
   async tick() {
     if (this.#stopping) return;
 
@@ -86,6 +89,18 @@ export class ManagerScheduler {
       await this.checkTimeouts();
     } catch (err) {
       this.#logger.error('[Scheduler] checkTimeouts error: %s', err.message);
+    }
+
+    // Auto-start pending tasks (FIFO) for projects with no active tasks
+    if (this.#startPendingTask) {
+      try {
+        const started = await this.#startPendingTask.checkAndStartAll();
+        if (started > 0) {
+          this.#logger.info('[Scheduler] Auto-started %d pending task(s)', started);
+        }
+      } catch (err) {
+        this.#logger.error('[Scheduler] startPendingTask error: %s', err.message);
+      }
     }
 
     // Fill free slots

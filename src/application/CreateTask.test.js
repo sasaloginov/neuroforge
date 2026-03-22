@@ -14,8 +14,12 @@ describe('CreateTask', () => {
 
   beforeEach(() => {
     taskService = {
-      createTask: vi.fn().mockResolvedValue({ id: 'task-1', status: 'pending', seqNumber: 1 }),
+      createTask: vi.fn().mockImplementation(({ title, description }) =>
+        Promise.resolve({ id: 'task-1', title, description, status: 'pending', seqNumber: 1 }),
+      ),
       advanceTask: vi.fn().mockResolvedValue({ id: 'task-1', status: 'in_progress' }),
+      hasActiveTask: vi.fn().mockResolvedValue(false),
+      setBranchName: vi.fn().mockResolvedValue({}),
     };
     runService = {
       enqueue: vi.fn().mockResolvedValue({ id: 'run-1', status: 'queued' }),
@@ -33,7 +37,9 @@ describe('CreateTask', () => {
     createTask = new CreateTask({ taskService, runService, roleRegistry, projectRepo, callbackSender });
   });
 
-  it('creates task, enqueues analyst run, sends callback', async () => {
+  it('creates task, enqueues analyst run, sends callback (no active task)', async () => {
+    taskService.hasActiveTask.mockResolvedValue(false);
+
     const result = await createTask.execute({
       projectId: 'proj-1',
       title: 'Build feature X',
@@ -46,27 +52,56 @@ describe('CreateTask', () => {
 
     expect(projectRepo.findById).toHaveBeenCalledWith('proj-1');
     expect(roleRegistry.get).toHaveBeenCalledWith('analyst');
-    expect(taskService.createTask).toHaveBeenCalledWith({
-      projectId: 'proj-1',
-      title: 'Build feature X',
-      description: 'Details about feature X',
-      callbackUrl: 'https://example.com/callback',
-      callbackMeta: { chatId: 123 },
-    });
-    expect(runService.enqueue).toHaveBeenCalledWith({
+    expect(taskService.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: 'proj-1',
+        title: 'Build feature X',
+        description: 'Details about feature X',
+        status: 'pending',
+      }),
+    );
+    expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       taskId: 'task-1',
-      stepId: null,
       roleName: 'analyst',
       prompt: expect.stringContaining('Build feature X'),
+    }));
+    expect(taskService.advanceTask).toHaveBeenCalledWith('task-1');
+    expect(callbackSender.send).toHaveBeenCalled();
+  });
+
+  it('queues task as pending when project already has an active task', async () => {
+    taskService.hasActiveTask.mockResolvedValue(true);
+
+    const result = await createTask.execute({
+      projectId: 'proj-1',
+      title: 'Second task',
       callbackUrl: 'https://example.com/callback',
       callbackMeta: { chatId: 123 },
     });
-    expect(taskService.advanceTask).toHaveBeenCalledWith('task-1');
+
+    expect(result.status).toBe('pending');
+    expect(runService.enqueue).not.toHaveBeenCalled();
+    expect(taskService.advanceTask).not.toHaveBeenCalled();
     expect(callbackSender.send).toHaveBeenCalledWith(
       'https://example.com/callback',
-      expect.objectContaining({ type: 'progress', taskId: 'task-1', shortId: 'TP-1', stage: 'queued' }),
+      expect.objectContaining({ stage: 'queued', message: expect.stringContaining('очередь') }),
       { chatId: 123 },
     );
+  });
+
+  it('creates backlog task — never enqueues, stays in backlog status', async () => {
+    taskService.createTask.mockResolvedValue({ id: 'task-1', status: 'backlog', seqNumber: 1 });
+
+    const result = await createTask.execute({
+      projectId: 'proj-1',
+      title: 'Future task',
+      status: 'backlog',
+    });
+
+    expect(result.status).toBe('backlog');
+    expect(runService.enqueue).not.toHaveBeenCalled();
+    expect(taskService.advanceTask).not.toHaveBeenCalled();
+    expect(taskService.hasActiveTask).not.toHaveBeenCalled();
   });
 
   it('throws ProjectNotFoundError when project does not exist', async () => {
