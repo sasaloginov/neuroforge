@@ -50,6 +50,8 @@ describe.skipIf(!DATABASE_URL)('PgRunRepo (integration)', () => {
       taskId,
       roleName: 'analyst',
       prompt: 'Analyze this',
+      callbackUrl: 'https://example.com/cb',
+      callbackMeta: { chatId: 42 },
     });
 
     await repo.save(run);
@@ -59,6 +61,14 @@ describe.skipIf(!DATABASE_URL)('PgRunRepo (integration)', () => {
     expect(found.id).toBe(run.id);
     expect(found.roleName).toBe('analyst');
     expect(found.status).toBe('queued');
+    expect(found.callbackMeta).toEqual({ chatId: 42 });
+  });
+
+  it('preserves null callbackMeta', async () => {
+    const run = Run.create({ taskId, roleName: 'analyst', prompt: 'p' });
+    await repo.save(run);
+    const found = await repo.findById(run.id);
+    expect(found.callbackMeta).toBeNull();
   });
 
   it('findByTaskId', async () => {
