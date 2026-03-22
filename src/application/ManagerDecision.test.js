@@ -836,3 +836,168 @@ describe('ManagerDecision — review severity handling', () => {
     expect(chatEngine.runPrompt).toHaveBeenCalled();
   });
 });
+
+describe('ManagerDecision — research mode', () => {
+  let managerDecision;
+  let runService;
+  let taskService;
+  let chatEngine;
+  let roleRegistry;
+  let callbackSender;
+  let runRepo;
+  let startNextPendingTask;
+
+  const t0 = new Date('2026-01-01');
+
+  const makeTask = (overrides = {}) => ({
+    id: 'task-1',
+    title: 'Research topic X',
+    description: 'Investigate X',
+    status: 'in_progress',
+    mode: 'research',
+    revisionCount: 0,
+    callbackUrl: 'https://example.com/cb',
+    callbackMeta: { chatId: 1 },
+    projectId: 'proj-1',
+    shortId: 'NF-15',
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    runService = {
+      enqueue: vi.fn().mockResolvedValue({ id: 'run-new', status: 'queued' }),
+    };
+    taskService = {
+      getTask: vi.fn().mockResolvedValue(makeTask()),
+      completeTask: vi.fn().mockResolvedValue(undefined),
+      failTask: vi.fn().mockResolvedValue(undefined),
+    };
+    chatEngine = {
+      runPrompt: vi.fn().mockResolvedValue({
+        response: JSON.stringify({ action: 'fail_task', reason: 'Analyst failed' }),
+        sessionId: 'mgr-session',
+      }),
+    };
+    roleRegistry = {
+      get: vi.fn().mockReturnValue({ name: 'manager', timeoutMs: 600000 }),
+    };
+    callbackSender = {
+      send: vi.fn().mockResolvedValue({ ok: true }),
+    };
+    runRepo = {
+      findById: vi.fn(),
+      findByTaskId: vi.fn(),
+    };
+    startNextPendingTask = {
+      execute: vi.fn().mockResolvedValue({ started: false }),
+    };
+
+    managerDecision = new ManagerDecision({
+      runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo,
+      logger: { info: vi.fn(), error: vi.fn() },
+      startNextPendingTask,
+    });
+  });
+
+  it('completes task after successful analyst run without calling LLM', async () => {
+    runRepo.findById.mockResolvedValue({ id: 'run-analyst', taskId: 'task-1', status: 'done' });
+    runRepo.findByTaskId.mockResolvedValue([
+      { id: 'run-analyst', roleName: 'analyst', status: 'done', response: '# Research\n\nFindings...', createdAt: t0 },
+    ]);
+
+    const result = await managerDecision.execute({ completedRunId: 'run-analyst' });
+
+    expect(result.action).toBe('complete_task');
+    expect(result.details.mode).toBe('research');
+    expect(taskService.completeTask).toHaveBeenCalledWith('task-1');
+    expect(chatEngine.runPrompt).not.toHaveBeenCalled();
+  });
+
+  it('sends callback with result field containing analyst response', async () => {
+    const analystResponse = '# Deep Research\n\nDetailed findings about topic X.';
+    runRepo.findById.mockResolvedValue({ id: 'run-analyst', taskId: 'task-1', status: 'done' });
+    runRepo.findByTaskId.mockResolvedValue([
+      { id: 'run-analyst', roleName: 'analyst', status: 'done', response: analystResponse, createdAt: t0 },
+    ]);
+
+    await managerDecision.execute({ completedRunId: 'run-analyst' });
+
+    expect(callbackSender.send).toHaveBeenCalledWith(
+      'https://example.com/cb',
+      expect.objectContaining({
+        type: 'done',
+        mode: 'research',
+        result: analystResponse,
+        summary: 'Исследование завершено',
+        taskId: 'task-1',
+        shortId: 'NF-15',
+      }),
+      { chatId: 1 },
+    );
+  });
+
+  it('truncates result if analyst response > 50KB', async () => {
+    const longResponse = 'x'.repeat(60_000);
+    runRepo.findById.mockResolvedValue({ id: 'run-analyst', taskId: 'task-1', status: 'done' });
+    runRepo.findByTaskId.mockResolvedValue([
+      { id: 'run-analyst', roleName: 'analyst', status: 'done', response: longResponse, createdAt: t0 },
+    ]);
+
+    const result = await managerDecision.execute({ completedRunId: 'run-analyst' });
+
+    expect(result.details.resultLength).toBe(60_000);
+    const sentPayload = callbackSender.send.mock.calls[0][1];
+    expect(sentPayload.result.length).toBeLessThanOrEqual(50_000 + 20);
+    expect(sentPayload.result).toContain('[...truncated]');
+  });
+
+  it('falls through to LLM if analyst failed', async () => {
+    runRepo.findById.mockResolvedValue({ id: 'run-analyst', taskId: 'task-1', status: 'done' });
+    runRepo.findByTaskId.mockResolvedValue([
+      { id: 'run-analyst', roleName: 'analyst', status: 'failed', response: null, error: 'timeout', createdAt: t0 },
+    ]);
+
+    const result = await managerDecision.execute({ completedRunId: 'run-analyst' });
+
+    // Should fall through to LLM manager
+    expect(chatEngine.runPrompt).toHaveBeenCalled();
+    expect(taskService.completeTask).not.toHaveBeenCalled();
+  });
+
+  it('ignores research mode for mode=full tasks', async () => {
+    taskService.getTask.mockResolvedValue(makeTask({ mode: 'full' }));
+    runRepo.findById.mockResolvedValue({ id: 'run-analyst', taskId: 'task-1', status: 'done' });
+    runRepo.findByTaskId.mockResolvedValue([
+      { id: 'run-analyst', roleName: 'analyst', status: 'done', response: 'Analysis', createdAt: t0 },
+    ]);
+
+    const result = await managerDecision.execute({ completedRunId: 'run-analyst' });
+
+    // Should fall through to LLM manager for full mode
+    expect(chatEngine.runPrompt).toHaveBeenCalled();
+  });
+
+  it('calls tryStartNext after completing research task', async () => {
+    runRepo.findById.mockResolvedValue({ id: 'run-analyst', taskId: 'task-1', status: 'done' });
+    runRepo.findByTaskId.mockResolvedValue([
+      { id: 'run-analyst', roleName: 'analyst', status: 'done', response: 'Result', createdAt: t0 },
+    ]);
+
+    await managerDecision.execute({ completedRunId: 'run-analyst' });
+
+    expect(startNextPendingTask.execute).toHaveBeenCalledWith({ projectId: 'proj-1' });
+  });
+
+  it('does not send callback when callbackUrl is null', async () => {
+    taskService.getTask.mockResolvedValue(makeTask({ callbackUrl: null }));
+    runRepo.findById.mockResolvedValue({ id: 'run-analyst', taskId: 'task-1', status: 'done' });
+    runRepo.findByTaskId.mockResolvedValue([
+      { id: 'run-analyst', roleName: 'analyst', status: 'done', response: 'Result', createdAt: t0 },
+    ]);
+
+    const result = await managerDecision.execute({ completedRunId: 'run-analyst' });
+
+    expect(result.action).toBe('complete_task');
+    expect(callbackSender.send).not.toHaveBeenCalled();
+  });
+});

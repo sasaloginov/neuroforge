@@ -92,11 +92,11 @@ export class PgTaskRepo extends ITaskRepo {
 
       const r = task.toRow();
       await client.query(
-        `INSERT INTO tasks (id, project_id, title, description, status, callback_url, callback_meta, revision_count, seq_number, branch_name, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        `INSERT INTO tasks (id, project_id, title, description, status, callback_url, callback_meta, revision_count, seq_number, branch_name, mode, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [r.id, r.project_id, r.title, r.description, r.status, r.callback_url,
          r.callback_meta ? JSON.stringify(r.callback_meta) : null,
-         r.revision_count, r.seq_number, r.branch_name, r.created_at, r.updated_at],
+         r.revision_count, r.seq_number, r.branch_name, r.mode, r.created_at, r.updated_at],
       );
 
       await client.query('COMMIT');
@@ -113,8 +113,8 @@ export class PgTaskRepo extends ITaskRepo {
   async save(task) {
     const r = task.toRow();
     await this._getPool().query(
-      `INSERT INTO tasks (id, project_id, title, description, status, callback_url, callback_meta, revision_count, seq_number, branch_name, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      `INSERT INTO tasks (id, project_id, title, description, status, callback_url, callback_meta, revision_count, seq_number, branch_name, mode, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        ON CONFLICT (id) DO UPDATE SET
          project_id = EXCLUDED.project_id,
          title = EXCLUDED.title,
@@ -125,10 +125,11 @@ export class PgTaskRepo extends ITaskRepo {
          revision_count = EXCLUDED.revision_count,
          seq_number = EXCLUDED.seq_number,
          branch_name = EXCLUDED.branch_name,
+         mode = EXCLUDED.mode,
          updated_at = EXCLUDED.updated_at`,
       [r.id, r.project_id, r.title, r.description, r.status, r.callback_url,
        r.callback_meta ? JSON.stringify(r.callback_meta) : null,
-       r.revision_count, r.seq_number, r.branch_name, r.created_at, r.updated_at],
+       r.revision_count, r.seq_number, r.branch_name, r.mode, r.created_at, r.updated_at],
     );
   }
 

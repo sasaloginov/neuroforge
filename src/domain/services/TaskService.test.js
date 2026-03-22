@@ -45,6 +45,22 @@ describe('TaskService', () => {
     expect(repo.saveWithSeqNumber).toHaveBeenCalledWith(task);
   });
 
+  it('passes mode to created task', async () => {
+    const task = await service.createTask({
+      projectId: 'proj-1',
+      title: 'Research',
+      mode: 'research',
+    });
+
+    const savedTask = repo.saveWithSeqNumber.mock.calls[0][0];
+    expect(savedTask.mode).toBe('research');
+  });
+
+  it('defaults mode to full when not specified', async () => {
+    const task = await service.createTask({ projectId: 'p-1', title: 'Test' });
+    expect(task.mode).toBe('full');
+  });
+
   it('passes callbackMeta to created task', async () => {
     const task = await service.createTask({
       projectId: 'proj-1',

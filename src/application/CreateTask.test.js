@@ -154,6 +154,29 @@ describe('CreateTask', () => {
     );
   });
 
+  it('passes mode to taskService.createTask', async () => {
+    const result = await createTask.execute({
+      projectId: 'proj-1',
+      title: 'Research topic',
+      mode: 'research',
+    });
+
+    expect(taskService.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'research' }),
+    );
+  });
+
+  it('works without mode — defaults to full in taskService', async () => {
+    const result = await createTask.execute({
+      projectId: 'proj-1',
+      title: 'Build feature',
+    });
+
+    expect(taskService.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: undefined }),
+    );
+  });
+
   it('throws RoleNotFoundError when analyst role is not registered', async () => {
     roleRegistry.get.mockImplementation(() => { throw new RoleNotFoundError('analyst'); });
 

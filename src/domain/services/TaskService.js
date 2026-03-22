@@ -11,8 +11,8 @@ export class TaskService {
     this.#taskRepo = taskRepo;
   }
 
-  async createTask({ projectId, title, description, callbackUrl, callbackMeta, status }) {
-    const task = Task.create({ projectId, title, description, callbackUrl, callbackMeta, status });
+  async createTask({ projectId, title, description, callbackUrl, callbackMeta, status, mode }) {
+    const task = Task.create({ projectId, title, description, callbackUrl, callbackMeta, status, mode });
     await this.#taskRepo.saveWithSeqNumber(task);
     return task;
   }

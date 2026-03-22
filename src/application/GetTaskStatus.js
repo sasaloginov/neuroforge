@@ -61,6 +61,7 @@ export class GetTaskStatus {
         projectId: task.projectId,
         title: task.title,
         status: task.status,
+        mode: task.mode,
         revisionCount: task.revisionCount,
         createdAt: task.createdAt,
         updatedAt: task.updatedAt,

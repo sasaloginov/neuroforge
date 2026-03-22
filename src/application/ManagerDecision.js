@@ -51,6 +51,12 @@ export class ManagerDecision {
       return { action: 'waiting', details: { pendingCount: pendingRuns.length } };
     }
 
+    // Research-mode: auto-complete after analyst (no LLM call)
+    const researchResult = await this.#handleResearchMode(task, allRuns);
+    if (researchResult) {
+      return researchResult;
+    }
+
     // Automatic review severity handling (before calling manager LLM)
     const reviewResult = await this.#handleReviewFindings(task, allRuns);
     if (reviewResult) {
@@ -244,6 +250,64 @@ export class ManagerDecision {
         this.#logger.error('[ManagerDecision] Failed to start next pending task: %s', err.message);
       }
     }
+  }
+
+  /**
+   * Research mode: after analyst completes → auto complete_task.
+   * No LLM call, no developer/reviewer pipeline.
+   *
+   * @param {object} task
+   * @param {Array} allRuns
+   * @returns {Promise<object|null>}
+   */
+  async #handleResearchMode(task, allRuns) {
+    if (task.mode !== 'research') return null;
+
+    const completedRuns = allRuns
+      .filter(r => ['done', 'failed', 'timeout', 'interrupted'].includes(r.status));
+
+    // Find last analyst run
+    const lastAnalystRun = [...completedRuns]
+      .reverse()
+      .find(r => r.roleName === 'analyst');
+
+    if (!lastAnalystRun) return null;
+
+    // Analyst failed → let LLM manager decide (retry/fail)
+    if (lastAnalystRun.status !== 'done') return null;
+
+    // Analyst succeeded → complete task with analyst's response
+    const result = lastAnalystRun.response ?? '';
+
+    // Truncate for callback (max 50KB)
+    const MAX_RESULT_LENGTH = 50_000;
+    const truncatedResult = result.length > MAX_RESULT_LENGTH
+      ? result.substring(0, MAX_RESULT_LENGTH) + '\n\n[...truncated]'
+      : result;
+
+    await this.#taskService.completeTask(task.id);
+
+    if (task.callbackUrl) {
+      await this.#callbackSender.send(
+        task.callbackUrl,
+        {
+          type: 'done',
+          taskId: task.id,
+          shortId: task.shortId,
+          mode: 'research',
+          summary: 'Исследование завершено',
+          result: truncatedResult,
+        },
+        task.callbackMeta,
+      );
+    }
+
+    await this.#tryStartNext(task.projectId);
+
+    return {
+      action: 'complete_task',
+      details: { mode: 'research', resultLength: result.length },
+    };
   }
 
   /**

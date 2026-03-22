@@ -25,7 +25,7 @@ const TRANSITIONS = {
 export class Task {
   static STATUSES = STATUSES;
 
-  constructor({ id, projectId, title, description, status, callbackUrl, callbackMeta, revisionCount, seqNumber, projectPrefix, branchName, createdAt, updatedAt }) {
+  constructor({ id, projectId, title, description, status, callbackUrl, callbackMeta, revisionCount, seqNumber, projectPrefix, branchName, mode, createdAt, updatedAt }) {
     this.id = id;
     this.projectId = projectId;
     this.title = title;
@@ -37,6 +37,7 @@ export class Task {
     this.seqNumber = seqNumber ?? null;
     this.projectPrefix = projectPrefix ?? null;
     this.branchName = branchName ?? null;
+    this.mode = mode ?? 'full';
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
   }
@@ -48,7 +49,7 @@ export class Task {
     return null;
   }
 
-  static create({ projectId, title, description, callbackUrl, callbackMeta, seqNumber, status }) {
+  static create({ projectId, title, description, callbackUrl, callbackMeta, seqNumber, status, mode }) {
     const initialStatus = status === STATUSES.BACKLOG ? STATUSES.BACKLOG : STATUSES.PENDING;
     const now = new Date();
     return new Task({
@@ -62,6 +63,7 @@ export class Task {
       revisionCount: 0,
       seqNumber: seqNumber ?? null,
       branchName: null,
+      mode: mode ?? 'full',
       createdAt: now,
       updatedAt: now,
     });
@@ -97,6 +99,7 @@ export class Task {
       seqNumber: row.seq_number ?? null,
       projectPrefix: row.project_prefix ?? null,
       branchName: row.branch_name ?? null,
+      mode: row.mode ?? 'full',
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });
@@ -114,6 +117,7 @@ export class Task {
       revision_count: this.revisionCount,
       seq_number: this.seqNumber,
       branch_name: this.branchName,
+      mode: this.mode,
       created_at: this.createdAt,
       updated_at: this.updatedAt,
     };

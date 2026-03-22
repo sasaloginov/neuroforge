@@ -137,6 +137,32 @@ describe('Task', () => {
       expect(task.branchName).toBeNull();
     });
 
+    it('mode defaults to full on create', () => {
+      const task = Task.create(defaults);
+      expect(task.mode).toBe('full');
+    });
+
+    it('create accepts mode: research', () => {
+      const task = Task.create({ ...defaults, mode: 'research' });
+      expect(task.mode).toBe('research');
+    });
+
+    it('roundtrips mode through toRow/fromRow', () => {
+      const task = Task.create({ ...defaults, mode: 'research' });
+      const row = task.toRow();
+      expect(row.mode).toBe('research');
+      const restored = Task.fromRow(row);
+      expect(restored.mode).toBe('research');
+    });
+
+    it('fromRow defaults mode to full when absent', () => {
+      const task = Task.create(defaults);
+      const row = task.toRow();
+      delete row.mode;
+      const restored = Task.fromRow(row);
+      expect(restored.mode).toBe('full');
+    });
+
     it('supports backlog initial status', () => {
       const task = Task.create({ ...defaults, status: 'backlog' });
       expect(task.status).toBe('backlog');

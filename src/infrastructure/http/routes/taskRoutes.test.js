@@ -139,6 +139,39 @@ describe('taskRoutes', () => {
       );
     });
 
+    it('accepts mode: research and passes to use case', async () => {
+      const { app: a, useCases } = setup();
+      app = a;
+      await app.ready();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/tasks',
+        headers: authHeader(),
+        payload: { projectId: PROJECT_ID, title: 'Research task', mode: 'research' },
+      });
+
+      expect(res.statusCode).toBe(202);
+      expect(useCases.createTask.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: 'research' }),
+      );
+    });
+
+    it('rejects invalid mode value', async () => {
+      const { app: a } = setup();
+      app = a;
+      await app.ready();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/tasks',
+        headers: authHeader(),
+        payload: { projectId: PROJECT_ID, title: 'T', mode: 'invalid' },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
     it('returns 400 when title is missing', async () => {
       const { app: a } = setup();
       app = a;

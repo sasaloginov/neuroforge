@@ -19,7 +19,7 @@ export class CreateTask {
     this.#callbackSender = callbackSender;
   }
 
-  async execute({ projectId, title, description, callbackUrl, callbackMeta, status }) {
+  async execute({ projectId, title, description, callbackUrl, callbackMeta, status, mode }) {
     if (!projectId) throw new ValidationError('projectId is required');
     if (!title || !title.trim()) throw new ValidationError('title is required');
 
@@ -36,6 +36,7 @@ export class CreateTask {
       callbackUrl,
       callbackMeta,
       status,
+      mode,
     });
 
     // Generate and save branch name

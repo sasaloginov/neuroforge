@@ -11,6 +11,7 @@ const createTaskSchema = {
       callbackUrl: { type: 'string', format: 'uri', maxLength: 512 },
       callbackMeta: { type: 'object' },
       status: { type: 'string', enum: ['backlog'] },
+      mode: { type: 'string', enum: ['full', 'research'], default: 'full' },
     },
     additionalProperties: false,
   },
