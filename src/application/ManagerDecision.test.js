@@ -279,6 +279,11 @@ describe('ManagerDecision', () => {
       expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({ roleName: 'reviewer-architecture' }));
       expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({ roleName: 'reviewer-business' }));
       expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({ roleName: 'reviewer-security' }));
+
+      // callbackMeta must be passed to every enqueued run
+      for (const call of runService.enqueue.mock.calls) {
+        expect(call[0].callbackMeta).toEqual({ chatId: 1 });
+      }
     });
 
     it('sends single progress callback with combined stage name', async () => {

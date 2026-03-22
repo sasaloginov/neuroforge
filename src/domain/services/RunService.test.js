@@ -66,6 +66,19 @@ describe('RunService', () => {
     expect(interrupted.status).toBe('interrupted');
   });
 
+  it('passes callbackMeta to created run', async () => {
+    const result = await service.enqueue({
+      taskId: 't-1',
+      roleName: 'analyst',
+      prompt: 'do stuff',
+      callbackUrl: 'https://cb.example.com',
+      callbackMeta: { chatId: 777 },
+    });
+
+    const savedRun = repo.save.mock.calls[0][0];
+    expect(savedRun.callbackMeta).toEqual({ chatId: 777 });
+  });
+
   it('throws RunNotFoundError for unknown id', async () => {
     await expect(service.start('unknown', 's-1')).rejects.toThrow(RunNotFoundError);
   });

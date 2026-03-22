@@ -2,7 +2,7 @@ import { Run } from './Run.js';
 import { InvalidTransitionError } from '../errors/InvalidTransitionError.js';
 
 describe('Run', () => {
-  const defaults = { taskId: 't-1', stepId: 's-1', roleName: 'developer', prompt: 'do stuff', callbackUrl: 'http://cb', callbackMeta: {} };
+  const defaults = { taskId: 't-1', stepId: 's-1', roleName: 'developer', prompt: 'do stuff', callbackUrl: 'http://cb', callbackMeta: { chatId: 99 } };
 
   describe('create', () => {
     it('creates with queued status', () => {
@@ -79,6 +79,7 @@ describe('Run', () => {
       expect(restored.roleName).toBe('developer');
       expect(restored.sessionId).toBe('s-1');
       expect(restored.status).toBe('running');
+      expect(restored.callbackMeta).toEqual({ chatId: 99 });
     });
   });
 });

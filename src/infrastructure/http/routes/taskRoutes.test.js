@@ -96,6 +96,49 @@ describe('taskRoutes', () => {
       );
     });
 
+    it('passes callbackMeta to createTask use case', async () => {
+      const { app: a, useCases } = setup();
+      app = a;
+      await app.ready();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/tasks',
+        headers: authHeader(),
+        payload: {
+          projectId: PROJECT_ID,
+          title: 'Test Task',
+          callbackUrl: 'https://example.com/cb',
+          callbackMeta: { telegramChatId: 555, threadId: 42 },
+        },
+      });
+
+      expect(res.statusCode).toBe(202);
+      expect(useCases.createTask.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          callbackMeta: { telegramChatId: 555, threadId: 42 },
+        }),
+      );
+    });
+
+    it('works without callbackMeta in request body', async () => {
+      const { app: a, useCases } = setup();
+      app = a;
+      await app.ready();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/tasks',
+        headers: authHeader(),
+        payload: { projectId: PROJECT_ID, title: 'No meta task' },
+      });
+
+      expect(res.statusCode).toBe(202);
+      expect(useCases.createTask.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'No meta task' }),
+      );
+    });
+
     it('returns 400 when title is missing', async () => {
       const { app: a } = setup();
       app = a;

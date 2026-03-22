@@ -45,6 +45,17 @@ describe('TaskService', () => {
     expect(repo.saveWithSeqNumber).toHaveBeenCalledWith(task);
   });
 
+  it('passes callbackMeta to created task', async () => {
+    const task = await service.createTask({
+      projectId: 'proj-1',
+      title: 'Test',
+      callbackMeta: { chatId: 888 },
+    });
+
+    const savedTask = repo.saveWithSeqNumber.mock.calls[0][0];
+    expect(savedTask.callbackMeta).toEqual({ chatId: 888 });
+  });
+
   it('advances task to in_progress', async () => {
     const task = await service.createTask({ projectId: 'p-1', title: 'X' });
     const advanced = await service.advanceTask(task.id);
