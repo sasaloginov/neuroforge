@@ -16,4 +16,6 @@ export class ITaskRepo {
   async save(_task) { throw new Error('Not implemented'); }
   async saveWithSeqNumber(_task) { throw new Error('Not implemented'); }
   async delete(_id) { throw new Error('Not implemented'); }
+  async hasActiveTask(_projectId) { throw new Error('Not implemented'); }
+  async findOldestPending(_projectId) { throw new Error('Not implemented'); }
 }

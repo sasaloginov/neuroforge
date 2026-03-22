@@ -126,10 +126,32 @@ describe('Task', () => {
       expect(restored.seqNumber).toBe(7);
     });
 
-    it('does not have projectPrefix — shortId is computed in application layer', () => {
+    it('projectPrefix defaults to null on create, shortId returns null without prefix', () => {
       const task = Task.create({ ...defaults, seqNumber: 3 });
-      expect(task).not.toHaveProperty('projectPrefix');
-      expect(task).not.toHaveProperty('shortId');
+      expect(task.projectPrefix).toBeNull();
+      expect(task.shortId).toBeNull();
+    });
+
+    it('branchName defaults to null on create', () => {
+      const task = Task.create({ ...defaults });
+      expect(task.branchName).toBeNull();
+    });
+
+    it('supports backlog initial status', () => {
+      const task = Task.create({ ...defaults, status: 'backlog' });
+      expect(task.status).toBe('backlog');
+    });
+
+    it('backlog can transition to pending', () => {
+      const task = Task.create({ ...defaults, status: 'backlog' });
+      task.transitionTo('pending');
+      expect(task.status).toBe('pending');
+    });
+
+    it('backlog can transition to cancelled', () => {
+      const task = Task.create({ ...defaults, status: 'backlog' });
+      task.transitionTo('cancelled');
+      expect(task.status).toBe('cancelled');
     });
   });
 });

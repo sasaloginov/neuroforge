@@ -25,6 +25,9 @@ import { GetRunDetail } from './application/GetRunDetail.js';
 import { CancelTask } from './application/CancelTask.js';
 import { ReplyToQuestion } from './application/ReplyToQuestion.js';
 import { RestartTask } from './application/RestartTask.js';
+import { EnqueueTask } from './application/EnqueueTask.js';
+import { StartNextPendingTask } from './application/StartNextPendingTask.js';
+import { GitCLIAdapter } from './infrastructure/git/gitCLIAdapter.js';
 import { createServer } from './infrastructure/http/server.js';
 import { createWorker } from './infrastructure/scheduler/worker.js';
 import { ManagerScheduler } from './infrastructure/scheduler/managerScheduler.js';
@@ -132,14 +135,17 @@ async function main() {
   const runService = new RunService({ runRepo });
 
   // 7. Use cases
-  const createTask = new CreateTask({ taskService, runService, roleRegistry, projectRepo, callbackSender });
-  const processRun = new ProcessRun({ runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender });
-  const managerDecision = new ManagerDecision({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, logger: console });
+  const gitOps = new GitCLIAdapter({ logger: console });
+  const startNextPendingTask = new StartNextPendingTask({ taskRepo, taskService, runService, roleRegistry });
+  const createTask = new CreateTask({ taskService, runService, roleRegistry, projectRepo, taskRepo, callbackSender });
+  const processRun = new ProcessRun({ runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender, gitOps, workDir: config.workDir, logger: console });
+  const managerDecision = new ManagerDecision({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, logger: console, startNextPendingTask });
   const getTaskStatus = new GetTaskStatus({ taskService, runRepo, projectRepo });
   const getRunDetail = new GetRunDetail({ taskService, runRepo });
-  const cancelTask = new CancelTask({ taskService, runRepo, projectRepo, callbackSender });
+  const cancelTask = new CancelTask({ taskService, runRepo, projectRepo, callbackSender, startNextPendingTask, logger: console });
   const replyToQuestion = new ReplyToQuestion({ taskService, runService, runRepo, projectRepo, callbackSender });
   const restartTask = new RestartTask({ taskService, runRepo, projectRepo, managerDecision, callbackSender });
+  const enqueueTask = new EnqueueTask({ taskService, startNextPendingTask, projectRepo });
 
   // 8. Worker + Scheduler
   const worker = createWorker({ processRun, managerDecision, logger: console });
@@ -158,7 +164,7 @@ async function main() {
     database: new DatabaseHealthChecker({ pool: getPool() }),
     scheduler: new SchedulerHealthChecker({ scheduler }),
   };
-  const useCases = { createTask, getTaskStatus, getRunDetail, cancelTask, replyToQuestion, restartTask };
+  const useCases = { createTask, getTaskStatus, getRunDetail, cancelTask, replyToQuestion, restartTask, enqueueTask };
   const repos = { apiKeyRepo, userRepo, projectRepo, taskRepo, runRepo };
   const server = await createServer({ useCases, repos, checkers, version, startedAt });
 

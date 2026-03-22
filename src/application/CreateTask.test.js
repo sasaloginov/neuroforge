@@ -10,12 +10,14 @@ describe('CreateTask', () => {
   let runService;
   let roleRegistry;
   let projectRepo;
+  let taskRepo;
   let callbackSender;
 
   beforeEach(() => {
     taskService = {
-      createTask: vi.fn().mockResolvedValue({ id: 'task-1', status: 'pending', seqNumber: 1 }),
+      createTask: vi.fn().mockResolvedValue({ id: 'task-1', status: 'pending', seqNumber: 1, shortId: 'TP-1' }),
       advanceTask: vi.fn().mockResolvedValue({ id: 'task-1', status: 'in_progress' }),
+      updateBranchName: vi.fn().mockResolvedValue(undefined),
     };
     runService = {
       enqueue: vi.fn().mockResolvedValue({ id: 'run-1', status: 'queued' }),
@@ -26,14 +28,17 @@ describe('CreateTask', () => {
     projectRepo = {
       findById: vi.fn().mockResolvedValue({ id: 'proj-1', name: 'test-project', prefix: 'TP' }),
     };
+    taskRepo = {
+      hasActiveTask: vi.fn().mockResolvedValue(false),
+    };
     callbackSender = {
       send: vi.fn().mockResolvedValue({ ok: true }),
     };
 
-    createTask = new CreateTask({ taskService, runService, roleRegistry, projectRepo, callbackSender });
+    createTask = new CreateTask({ taskService, runService, roleRegistry, projectRepo, taskRepo, callbackSender });
   });
 
-  it('creates task, enqueues analyst run, sends callback', async () => {
+  it('creates task, generates branchName, enqueues analyst, sends callback', async () => {
     const result = await createTask.execute({
       projectId: 'proj-1',
       title: 'Build feature X',
@@ -42,30 +47,63 @@ describe('CreateTask', () => {
       callbackMeta: { chatId: 123 },
     });
 
-    expect(result).toEqual({ taskId: 'task-1', shortId: 'TP-1', status: 'in_progress' });
+    expect(result.taskId).toBe('task-1');
+    expect(result.shortId).toBe('TP-1');
+    expect(result.branchName).toEqual(expect.stringContaining('TP-1/'));
+    expect(result.status).toBe('in_progress');
 
-    expect(projectRepo.findById).toHaveBeenCalledWith('proj-1');
-    expect(roleRegistry.get).toHaveBeenCalledWith('analyst');
-    expect(taskService.createTask).toHaveBeenCalledWith({
-      projectId: 'proj-1',
-      title: 'Build feature X',
-      description: 'Details about feature X',
-      callbackUrl: 'https://example.com/callback',
-      callbackMeta: { chatId: 123 },
-    });
-    expect(runService.enqueue).toHaveBeenCalledWith({
+    expect(taskService.updateBranchName).toHaveBeenCalledWith('task-1', expect.stringContaining('TP-1/'));
+    expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       taskId: 'task-1',
-      stepId: null,
       roleName: 'analyst',
-      prompt: expect.stringContaining('Build feature X'),
-      callbackUrl: 'https://example.com/callback',
-      callbackMeta: { chatId: 123 },
-    });
+    }));
     expect(taskService.advanceTask).toHaveBeenCalledWith('task-1');
     expect(callbackSender.send).toHaveBeenCalledWith(
       'https://example.com/callback',
-      expect.objectContaining({ type: 'progress', taskId: 'task-1', shortId: 'TP-1', stage: 'queued' }),
+      expect.objectContaining({ type: 'progress', taskId: 'task-1', stage: 'queued' }),
       { chatId: 123 },
+    );
+  });
+
+  it('queues task when project has active task', async () => {
+    taskRepo.hasActiveTask.mockResolvedValue(true);
+
+    const result = await createTask.execute({
+      projectId: 'proj-1',
+      title: 'Build feature X',
+      callbackUrl: 'https://example.com/cb',
+      callbackMeta: { chatId: 1 },
+    });
+
+    expect(result.status).toBe('pending');
+    expect(runService.enqueue).not.toHaveBeenCalled();
+    expect(taskService.advanceTask).not.toHaveBeenCalled();
+    expect(callbackSender.send).toHaveBeenCalledWith(
+      'https://example.com/cb',
+      expect.objectContaining({ type: 'queued', stage: 'pending' }),
+      { chatId: 1 },
+    );
+  });
+
+  it('creates backlog task without enqueuing', async () => {
+    taskService.createTask.mockResolvedValue({ id: 'task-2', status: 'backlog', seqNumber: 2 });
+
+    const result = await createTask.execute({
+      projectId: 'proj-1',
+      title: 'Future feature',
+      status: 'backlog',
+      callbackUrl: 'https://example.com/cb',
+      callbackMeta: { chatId: 1 },
+    });
+
+    expect(result.status).toBe('backlog');
+    expect(runService.enqueue).not.toHaveBeenCalled();
+    expect(taskService.advanceTask).not.toHaveBeenCalled();
+    expect(taskRepo.hasActiveTask).not.toHaveBeenCalled();
+    expect(callbackSender.send).toHaveBeenCalledWith(
+      'https://example.com/cb',
+      expect.objectContaining({ type: 'progress', stage: 'backlog' }),
+      { chatId: 1 },
     );
   });
 
@@ -101,7 +139,8 @@ describe('CreateTask', () => {
       title: 'Build feature X',
     });
 
-    expect(result).toEqual({ taskId: 'task-1', shortId: 'TP-1', status: 'in_progress' });
+    expect(result.taskId).toBe('task-1');
+    expect(result.status).toBe('in_progress');
     expect(callbackSender.send).not.toHaveBeenCalled();
   });
 
@@ -111,7 +150,7 @@ describe('CreateTask', () => {
       title: 'Build feature X',
     });
 
-    expect(result).toEqual({ taskId: 'task-1', shortId: 'TP-1', status: 'in_progress' });
+    expect(result.taskId).toBe('task-1');
     expect(taskService.createTask).toHaveBeenCalledWith(
       expect.objectContaining({ description: null }),
     );

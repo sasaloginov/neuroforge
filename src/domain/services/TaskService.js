@@ -11,15 +11,29 @@ export class TaskService {
     this.#taskRepo = taskRepo;
   }
 
-  async createTask({ projectId, title, description, callbackUrl, callbackMeta }) {
-    const task = Task.create({ projectId, title, description, callbackUrl, callbackMeta });
+  async createTask({ projectId, title, description, callbackUrl, callbackMeta, status }) {
+    const task = Task.create({ projectId, title, description, callbackUrl, callbackMeta, status });
     await this.#taskRepo.saveWithSeqNumber(task);
+    return task;
+  }
+
+  async updateBranchName(taskId, branchName) {
+    const task = await this.getTask(taskId);
+    task.branchName = branchName;
+    await this.#taskRepo.save(task);
     return task;
   }
 
   async getTaskByShortId(projectId, seqNumber) {
     const task = await this.#taskRepo.findByProjectIdAndSeq(projectId, seqNumber);
     if (!task) throw new TaskNotFoundError(`seq#${seqNumber} in project ${projectId}`);
+    return task;
+  }
+
+  async enqueueFromBacklog(taskId) {
+    const task = await this.getTask(taskId);
+    task.transitionTo(Task.STATUSES.PENDING);
+    await this.#taskRepo.save(task);
     return task;
   }
 

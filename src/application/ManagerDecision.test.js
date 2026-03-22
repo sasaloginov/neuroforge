@@ -423,6 +423,58 @@ describe('ManagerDecision', () => {
       expect(runService.enqueue).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('auto-start next pending task', () => {
+    it('calls startNextPendingTask after complete_task', async () => {
+      const startNext = { execute: vi.fn().mockResolvedValue({ started: true }) };
+      const md = new ManagerDecision({
+        runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo,
+        startNextPendingTask: startNext,
+      });
+
+      taskService.getTask.mockResolvedValue(makeTask({ projectId: 'proj-1' }));
+      chatEngine.runPrompt.mockResolvedValue({
+        response: JSON.stringify({ action: 'complete_task', summary: 'Done' }),
+      });
+
+      await md.execute({ completedRunId: 'run-1' });
+
+      expect(startNext.execute).toHaveBeenCalledWith({ projectId: 'proj-1' });
+    });
+
+    it('calls startNextPendingTask after fail_task', async () => {
+      const startNext = { execute: vi.fn().mockResolvedValue({ started: false }) };
+      const md = new ManagerDecision({
+        runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo,
+        startNextPendingTask: startNext,
+      });
+
+      taskService.getTask.mockResolvedValue(makeTask({ projectId: 'proj-1' }));
+      chatEngine.runPrompt.mockResolvedValue({
+        response: JSON.stringify({ action: 'fail_task', reason: 'Broken' }),
+      });
+
+      await md.execute({ completedRunId: 'run-1' });
+
+      expect(startNext.execute).toHaveBeenCalledWith({ projectId: 'proj-1' });
+    });
+
+    it('does not fail if startNextPendingTask throws', async () => {
+      const startNext = { execute: vi.fn().mockRejectedValue(new Error('oops')) };
+      const md = new ManagerDecision({
+        runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo,
+        startNextPendingTask: startNext, logger: { info: vi.fn(), error: vi.fn() },
+      });
+
+      taskService.getTask.mockResolvedValue(makeTask({ projectId: 'proj-1' }));
+      chatEngine.runPrompt.mockResolvedValue({
+        response: JSON.stringify({ action: 'complete_task', summary: 'Ok' }),
+      });
+
+      const result = await md.execute({ completedRunId: 'run-1' });
+      expect(result.action).toBe('complete_task');
+    });
+  });
 });
 
 describe('parseManagerDecision', () => {

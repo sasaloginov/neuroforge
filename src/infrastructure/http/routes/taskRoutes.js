@@ -10,6 +10,7 @@ const createTaskSchema = {
       description: { type: 'string', maxLength: 10000 },
       callbackUrl: { type: 'string', format: 'uri', maxLength: 512 },
       callbackMeta: { type: 'object' },
+      status: { type: 'string', enum: ['backlog'] },
     },
     additionalProperties: false,
   },
@@ -18,6 +19,27 @@ const createTaskSchema = {
       type: 'object',
       properties: {
         taskId: { type: 'string', format: 'uuid' },
+        shortId: { type: 'string' },
+        branchName: { type: 'string' },
+        status: { type: 'string' },
+      },
+    },
+  },
+};
+
+const enqueueSchema = {
+  params: {
+    type: 'object',
+    required: ['id'],
+    properties: {
+      id: { type: 'string' },
+    },
+  },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string' },
         shortId: { type: 'string' },
         status: { type: 'string' },
       },
@@ -168,6 +190,14 @@ export function taskRoutes({ useCases }) {
       assertProjectScope(request.apiKey, status.task.projectId);
 
       const result = await useCases.cancelTask.execute({ taskId: status.task.id });
+      return reply.send(result);
+    });
+
+    fastify.post('/tasks/:id/enqueue', { schema: enqueueSchema }, async (request, reply) => {
+      const status = await useCases.getTaskStatus.execute({ taskId: request.params.id });
+      assertProjectScope(request.apiKey, status.task.projectId);
+
+      const result = await useCases.enqueueTask.execute({ taskId: status.task.id });
       return reply.send(result);
     });
   };

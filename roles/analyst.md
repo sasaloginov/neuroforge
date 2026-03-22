@@ -42,6 +42,10 @@ allowed_tools:
 - Следуй принципам DRY, KISS, SOLID
 - ADR для значимых архитектурных решений
 
+## Git
+- Коммитить research/spec файлы с префиксом shortId задачи: `git commit -m "NF-9: research context"`
+- НЕ добавлять Co-Authored-By в коммиты
+
 ## Выход
 - Research: `research/context.md` — затрагиваемые файлы, зависимости, риски
 - Design: `design/spec.md` — спецификация с диаграммами, изменениями по слоям, тестами

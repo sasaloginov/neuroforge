@@ -181,4 +181,49 @@ describe('ProcessRun', () => {
 
     expect(runService.timeout).toHaveBeenCalledWith('run-1');
   });
+
+  it('calls gitOps.ensureBranch when task has branchName', async () => {
+    const gitOps = { ensureBranch: vi.fn().mockResolvedValue(undefined) };
+    taskRepo.findById.mockResolvedValue({ id: 'task-1', projectId: 'proj-1', branchName: 'NF-1/feature' });
+
+    const pr = new ProcessRun({
+      runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender,
+      gitOps, workDir: '/tmp/workspace',
+    });
+
+    await pr.execute();
+
+    expect(gitOps.ensureBranch).toHaveBeenCalledWith('NF-1/feature', '/tmp/workspace');
+  });
+
+  it('skips gitOps when task has no branchName', async () => {
+    const gitOps = { ensureBranch: vi.fn() };
+    taskRepo.findById.mockResolvedValue({ id: 'task-1', projectId: 'proj-1', branchName: null });
+
+    const pr = new ProcessRun({
+      runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender,
+      gitOps, workDir: '/tmp/workspace',
+    });
+
+    await pr.execute();
+
+    expect(gitOps.ensureBranch).not.toHaveBeenCalled();
+  });
+
+  it('continues processing even if gitOps.ensureBranch fails', async () => {
+    const gitOps = { ensureBranch: vi.fn().mockRejectedValue(new Error('git error')) };
+    const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
+    taskRepo.findById.mockResolvedValue({ id: 'task-1', projectId: 'proj-1', branchName: 'NF-1/feature' });
+
+    const pr = new ProcessRun({
+      runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender,
+      gitOps, workDir: '/tmp/workspace', logger,
+    });
+
+    const result = await pr.execute();
+
+    expect(logger.warn).toHaveBeenCalled();
+    expect(runService.complete).toHaveBeenCalled();
+    expect(result.result).not.toBeNull();
+  });
 });

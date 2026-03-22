@@ -14,7 +14,9 @@ export class ManagerDecision {
   #runRepo;
   #logger;
 
-  constructor({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, logger }) {
+  #startNextPendingTask;
+
+  constructor({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, logger, startNextPendingTask }) {
     this.#runService = runService;
     this.#taskService = taskService;
     this.#chatEngine = chatEngine;
@@ -22,6 +24,7 @@ export class ManagerDecision {
     this.#callbackSender = callbackSender;
     this.#runRepo = runRepo;
     this.#logger = logger || console;
+    this.#startNextPendingTask = startNextPendingTask || null;
   }
 
   async execute({ completedRunId }) {
@@ -196,6 +199,7 @@ export class ManagerDecision {
               task.callbackMeta,
             );
           }
+          await this.#tryStartNext(task.projectId);
           break;
         }
 
@@ -208,6 +212,7 @@ export class ManagerDecision {
               task.callbackMeta,
             );
           }
+          await this.#tryStartNext(task.projectId);
           break;
         }
       }
@@ -225,6 +230,20 @@ export class ManagerDecision {
     }
 
     return { action: decision.action, details: decision };
+  }
+
+  /**
+   * Try to start the next pending task for the project.
+   * @param {string} projectId
+   */
+  async #tryStartNext(projectId) {
+    if (this.#startNextPendingTask) {
+      try {
+        await this.#startNextPendingTask.execute({ projectId });
+      } catch (err) {
+        this.#logger.error('[ManagerDecision] Failed to start next pending task: %s', err.message);
+      }
+    }
   }
 
   /**
