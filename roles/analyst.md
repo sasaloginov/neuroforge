@@ -4,8 +4,10 @@ model: opus
 timeout_ms: 1800000
 allowed_tools:
   - Read
+  - Write
   - Glob
   - Grep
+  - Bash
   - WebSearch
   - WebFetch
 ---
