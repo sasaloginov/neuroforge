@@ -147,6 +147,10 @@ describe('Task', () => {
       expect(task.mode).toBe('research');
     });
 
+    it('create rejects invalid mode', () => {
+      expect(() => Task.create({ ...defaults, mode: 'invalid' })).toThrow('Invalid task mode');
+    });
+
     it('roundtrips mode through toRow/fromRow', () => {
       const task = Task.create({ ...defaults, mode: 'research' });
       const row = task.toRow();

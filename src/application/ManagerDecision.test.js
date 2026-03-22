@@ -543,6 +543,7 @@ describe('buildManagerPrompt', () => {
     expect(prompt).toContain('Build API');
     expect(prompt).toContain('REST endpoints');
     expect(prompt).toContain('Ветка: TP-1/build-api');
+    expect(prompt).toContain('Режим: full');
     expect(prompt).toContain('[analyst] status=done');
     expect(prompt).toContain('Analysis done');
     expect(prompt).toContain('[developer] status=failed');
@@ -560,6 +561,12 @@ describe('buildManagerPrompt', () => {
     const task = { title: 'T', description: 'd', status: 'in_progress', revisionCount: 0, branchName: null };
     const prompt = buildManagerPrompt(task, []);
     expect(prompt).toContain('Ветка: не назначена');
+  });
+
+  it('includes task mode in prompt', () => {
+    const task = { title: 'T', description: 'd', status: 'in_progress', revisionCount: 0, mode: 'research' };
+    const prompt = buildManagerPrompt(task, []);
+    expect(prompt).toContain('Режим: research');
   });
 });
 
@@ -936,8 +943,8 @@ describe('ManagerDecision — research mode', () => {
     );
   });
 
-  it('truncates result if analyst response > 50KB', async () => {
-    const longResponse = 'x'.repeat(60_000);
+  it('sets resultFormat=file when result exceeds Telegram message limit', async () => {
+    const longResponse = 'x'.repeat(5000);
     runRepo.findById.mockResolvedValue({ id: 'run-analyst', taskId: 'task-1', status: 'done' });
     runRepo.findByTaskId.mockResolvedValue([
       { id: 'run-analyst', roleName: 'analyst', status: 'done', response: longResponse, createdAt: t0 },
@@ -945,10 +952,26 @@ describe('ManagerDecision — research mode', () => {
 
     const result = await managerDecision.execute({ completedRunId: 'run-analyst' });
 
-    expect(result.details.resultLength).toBe(60_000);
+    expect(result.details.resultFormat).toBe('file');
     const sentPayload = callbackSender.send.mock.calls[0][1];
-    expect(sentPayload.result.length).toBeLessThanOrEqual(50_000 + 20);
-    expect(sentPayload.result).toContain('[...truncated]');
+    expect(sentPayload.resultFormat).toBe('file');
+    // Full result is sent (not truncated) — bot decides how to deliver
+    expect(sentPayload.result).toBe(longResponse);
+  });
+
+  it('sets resultFormat=message when result fits Telegram limit', async () => {
+    const shortResponse = 'Short research result';
+    runRepo.findById.mockResolvedValue({ id: 'run-analyst', taskId: 'task-1', status: 'done' });
+    runRepo.findByTaskId.mockResolvedValue([
+      { id: 'run-analyst', roleName: 'analyst', status: 'done', response: shortResponse, createdAt: t0 },
+    ]);
+
+    const result = await managerDecision.execute({ completedRunId: 'run-analyst' });
+
+    expect(result.details.resultFormat).toBe('message');
+    const sentPayload = callbackSender.send.mock.calls[0][1];
+    expect(sentPayload.resultFormat).toBe('message');
+    expect(sentPayload.result).toBe(shortResponse);
   });
 
   it('falls through to LLM if analyst failed', async () => {

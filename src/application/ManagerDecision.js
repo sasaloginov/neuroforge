@@ -279,11 +279,10 @@ export class ManagerDecision {
     // Analyst succeeded → complete task with analyst's response
     const result = lastAnalystRun.response ?? '';
 
-    // Truncate for callback (max 50KB)
-    const MAX_RESULT_LENGTH = 50_000;
-    const truncatedResult = result.length > MAX_RESULT_LENGTH
-      ? result.substring(0, MAX_RESULT_LENGTH) + '\n\n[...truncated]'
-      : result;
+    // Telegram message limit is 4096 chars. If result exceeds it,
+    // signal the bot to send as a .md file instead of inline message.
+    const TELEGRAM_MESSAGE_LIMIT = 4096;
+    const resultFormat = result.length > TELEGRAM_MESSAGE_LIMIT ? 'file' : 'message';
 
     await this.#taskService.completeTask(task.id);
 
@@ -296,7 +295,8 @@ export class ManagerDecision {
           shortId: task.shortId,
           mode: 'research',
           summary: 'Исследование завершено',
-          result: truncatedResult,
+          result,
+          resultFormat,
         },
         task.callbackMeta,
       );
@@ -306,7 +306,7 @@ export class ManagerDecision {
 
     return {
       action: 'complete_task',
-      details: { mode: 'research', resultLength: result.length },
+      details: { mode: 'research', resultLength: result.length, resultFormat },
     };
   }
 
@@ -446,6 +446,7 @@ function buildManagerPrompt(task, runs) {
   return `Задача: ${task.title}
 Описание: ${task.description ?? 'нет'}
 Ветка: ${task.branchName ?? 'не назначена'}
+Режим: ${task.mode ?? 'full'}
 Текущий статус: ${task.status}
 Количество ревизий: ${task.revisionCount}
 

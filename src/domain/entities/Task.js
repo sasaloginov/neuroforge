@@ -1,4 +1,5 @@
 import { InvalidTransitionError } from '../errors/InvalidTransitionError.js';
+import { isValidMode } from '../valueObjects/TaskMode.js';
 
 const STATUSES = {
   BACKLOG: 'backlog',
@@ -50,6 +51,10 @@ export class Task {
   }
 
   static create({ projectId, title, description, callbackUrl, callbackMeta, seqNumber, status, mode }) {
+    const validatedMode = mode ?? 'full';
+    if (!isValidMode(validatedMode)) {
+      throw new Error(`Invalid task mode: ${validatedMode}. Allowed: full, research`);
+    }
     const initialStatus = status === STATUSES.BACKLOG ? STATUSES.BACKLOG : STATUSES.PENDING;
     const now = new Date();
     return new Task({
@@ -63,7 +68,7 @@ export class Task {
       revisionCount: 0,
       seqNumber: seqNumber ?? null,
       branchName: null,
-      mode: mode ?? 'full',
+      mode: validatedMode,
       createdAt: now,
       updatedAt: now,
     });
