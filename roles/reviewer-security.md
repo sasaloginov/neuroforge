@@ -1,7 +1,7 @@
 ---
 name: reviewer-security
 model: sonnet
-timeout_ms: 180000
+timeout_ms: 900000
 allowed_tools:
   - Read
   - Glob
@@ -35,9 +35,33 @@ allowed_tools:
 - Insecure Design — архитектурные слабости
 - Security Misconfiguration — Docker, env, permissions
 
+## Формат ответа
+
+Используй строгий формат для findings и verdict:
+
+```
+VERDICT: PASS или FAIL
+
+FINDINGS:
+[CRITICAL] Описание критической уязвимости
+[MAJOR] Описание серьёзной уязвимости
+[HIGH] Описание важной уязвимости
+[MINOR] Описание незначительной проблемы
+[LOW] Описание мелкого замечания
+
+SUMMARY: Краткое резюме ревью безопасности
+```
+
+### Severity levels:
+- **CRITICAL** — command injection, SQL injection, RCE
+- **MAJOR** — broken access control, auth bypass
+- **HIGH** — XSS, CSRF, path traversal, secrets in code
+- **MINOR** — слабая валидация, отсутствие rate limiting
+- **LOW** — информативные сообщения об ошибках, минорные headers
+
 ## Оценка
-- **FAIL** — Critical или High уязвимость
-- **PASS** — нет Critical/High, Medium допустимы
+- **FAIL** — есть CRITICAL, MAJOR или HIGH findings
+- **PASS** — нет blocking findings (только MINOR/LOW допустимы)
 
 ## Завершение
-Вызови `complete()` с результатом: PASS/FAIL, findings по severity.
+Вызови `complete()` с результатом в формате выше.

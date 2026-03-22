@@ -11,6 +11,7 @@ const PROJECT_ID = '00000000-0000-0000-0000-000000000100';
 const testProject = new Project({
   id: PROJECT_ID,
   name: 'my-project',
+  prefix: 'MYP',
   repoUrl: 'https://github.com/org/repo',
   workDir: '/work',
   createdAt: new Date('2025-01-01'),
@@ -73,7 +74,7 @@ describe('projectRoutes', () => {
         method: 'POST',
         url: '/projects',
         headers: authHeader(),
-        payload: { name: 'new-project', repoUrl: 'https://github.com/org/new' },
+        payload: { name: 'new-project', prefix: 'NP', repoUrl: 'https://github.com/org/new' },
       });
 
       expect(res.statusCode).toBe(201);
@@ -97,7 +98,7 @@ describe('projectRoutes', () => {
         method: 'POST',
         url: '/projects',
         headers: authHeader(),
-        payload: { name: 'new-proj', repoUrl: 'https://github.com/org/new' },
+        payload: { name: 'new-proj', prefix: 'NP', repoUrl: 'https://github.com/org/new' },
       });
 
       expect(res.statusCode).toBe(403);
@@ -117,7 +118,7 @@ describe('projectRoutes', () => {
         method: 'POST',
         url: '/projects',
         headers: authHeader(),
-        payload: { name: 'existing', repoUrl: 'https://github.com/org/dup' },
+        payload: { name: 'existing', prefix: 'EX', repoUrl: 'https://github.com/org/dup' },
       });
 
       expect(res.statusCode).toBe(409);

@@ -19,16 +19,25 @@ export class PgProjectRepo extends IProjectRepo {
     return rows.length ? Project.fromRow(rows[0]) : null;
   }
 
+  async findByPrefix(prefix) {
+    const { rows } = await getPool().query(
+      'SELECT * FROM projects WHERE prefix = $1',
+      [prefix],
+    );
+    return rows.length ? Project.fromRow(rows[0]) : null;
+  }
+
   async save(project) {
     const r = project.toRow();
     await getPool().query(
-      `INSERT INTO projects (id, name, repo_url, work_dir, created_at)
-       VALUES ($1,$2,$3,$4,$5)
+      `INSERT INTO projects (id, name, prefix, repo_url, work_dir, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6)
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name,
+         prefix = EXCLUDED.prefix,
          repo_url = EXCLUDED.repo_url,
          work_dir = EXCLUDED.work_dir`,
-      [r.id, r.name, r.repo_url, r.work_dir, r.created_at],
+      [r.id, r.name, r.prefix, r.repo_url, r.work_dir, r.created_at],
     );
   }
 

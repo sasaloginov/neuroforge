@@ -41,7 +41,7 @@ describe('ProcessRun', () => {
       runPrompt: vi.fn().mockResolvedValue({ response: 'Analysis result', sessionId: 'cli-session-1' }),
     };
     sessionRepo = {
-      findByProjectAndRole: vi.fn().mockResolvedValue({
+      findOrCreate: vi.fn().mockResolvedValue({
         id: 'session-1',
         cliSessionId: 'cli-session-old',
         roleName: 'analyst',
@@ -68,8 +68,10 @@ describe('ProcessRun', () => {
     expect(runRepo.takeNext).toHaveBeenCalled();
     expect(roleRegistry.get).toHaveBeenCalledWith('analyst');
     expect(chatEngine.runPrompt).toHaveBeenCalledWith('analyst', 'Analyze this task', {
-      sessionId: null,
+      sessionId: 'cli-session-old',
       timeoutMs: 300000,
+      runId: 'run-1',
+      taskId: 'task-1',
     });
     expect(runService.complete).toHaveBeenCalledWith('run-1', 'Analysis result');
     expect(callbackSender.send).toHaveBeenCalledWith(
@@ -118,24 +120,32 @@ describe('ProcessRun', () => {
     );
   });
 
-  it('creates new session when none exists', async () => {
-    sessionRepo.findByProjectAndRole.mockResolvedValue(null);
-
+  it('binds session to run via runRepo.save before chatEngine call', async () => {
     await processRun.execute();
 
-    expect(sessionRepo.save).toHaveBeenCalled();
-    const savedSession = sessionRepo.save.mock.calls[0][0];
-    expect(savedSession.roleName).toBe('analyst');
+    expect(sessionRepo.findOrCreate).toHaveBeenCalledWith('project-1', 'analyst');
+    expect(runRepo.save).toHaveBeenCalled();
+    const savedRun = runRepo.save.mock.calls[0][0];
+    expect(savedRun.sessionId).toBe('session-1');
+  });
+
+  it('passes cliSessionId to chatEngine', async () => {
+    await processRun.execute();
+
     expect(chatEngine.runPrompt).toHaveBeenCalledWith('analyst', 'Analyze this task', expect.objectContaining({
-      sessionId: null,
+      sessionId: 'cli-session-old',
     }));
   });
 
-  it('reuses existing session record without passing cliSessionId', async () => {
+  it('passes null sessionId to chatEngine when cliSessionId is null', async () => {
+    sessionRepo.findOrCreate.mockResolvedValue({
+      id: 'session-1',
+      cliSessionId: null,
+      roleName: 'analyst',
+    });
+
     await processRun.execute();
 
-    expect(sessionRepo.findByProjectAndRole).toHaveBeenCalledWith('project-1', 'analyst');
-    // sessionId comes from run.sessionId (null), not from session.cliSessionId
     expect(chatEngine.runPrompt).toHaveBeenCalledWith('analyst', 'Analyze this task', expect.objectContaining({
       sessionId: null,
     }));
@@ -148,7 +158,7 @@ describe('ProcessRun', () => {
       cliSessionId: 'cli-session-old',
       roleName: 'analyst',
     };
-    sessionRepo.findByProjectAndRole.mockResolvedValue(session);
+    sessionRepo.findOrCreate.mockResolvedValue(session);
 
     await processRun.execute();
 

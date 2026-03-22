@@ -1,7 +1,7 @@
 ---
 name: default
 model: opus
-timeout_ms: 120000
+timeout_ms: 600000
 allowed_tools:
   - Read
   - Glob

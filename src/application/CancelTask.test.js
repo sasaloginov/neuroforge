@@ -7,10 +7,13 @@ describe('CancelTask', () => {
   let cancelTask;
   let taskService;
   let runRepo;
+  let projectRepo;
   let callbackSender;
 
   const makeTask = (overrides = {}) => ({
     id: 'task-1',
+    projectId: 'proj-1',
+    seqNumber: 1,
     status: 'in_progress',
     callbackUrl: 'https://example.com/cb',
     callbackMeta: { chatId: 1 },
@@ -34,11 +37,14 @@ describe('CancelTask', () => {
       findByTaskId: vi.fn().mockResolvedValue([]),
       save: vi.fn().mockResolvedValue(undefined),
     };
+    projectRepo = {
+      findById: vi.fn().mockResolvedValue({ id: 'proj-1', prefix: 'NF' }),
+    };
     callbackSender = {
       send: vi.fn().mockResolvedValue({ ok: true }),
     };
 
-    cancelTask = new CancelTask({ taskService, runRepo, callbackSender });
+    cancelTask = new CancelTask({ taskService, runRepo, projectRepo, callbackSender });
   });
 
   it('cancels task with queued runs', async () => {
@@ -48,7 +54,7 @@ describe('CancelTask', () => {
 
     const result = await cancelTask.execute({ taskId: 'task-1' });
 
-    expect(result).toEqual({ taskId: 'task-1', status: 'cancelled', cancelledRuns: 2 });
+    expect(result).toEqual({ taskId: 'task-1', shortId: 'NF-1', status: 'cancelled', cancelledRuns: 2 });
     expect(queuedRun1.transitionTo).toHaveBeenCalledWith('cancelled');
     expect(queuedRun2.transitionTo).toHaveBeenCalledWith('cancelled');
     expect(runRepo.save).toHaveBeenCalledTimes(2);
@@ -60,7 +66,7 @@ describe('CancelTask', () => {
 
     const result = await cancelTask.execute({ taskId: 'task-1' });
 
-    expect(result).toEqual({ taskId: 'task-1', status: 'cancelled', cancelledRuns: 0 });
+    expect(result).toEqual({ taskId: 'task-1', shortId: 'NF-1', status: 'cancelled', cancelledRuns: 0 });
     expect(taskService.cancelTask).toHaveBeenCalledWith('task-1');
   });
 
@@ -99,7 +105,7 @@ describe('CancelTask', () => {
 
     expect(callbackSender.send).toHaveBeenCalledWith(
       'https://example.com/cb',
-      expect.objectContaining({ type: 'failed', taskId: 'task-1', error: 'Task cancelled by user' }),
+      expect.objectContaining({ type: 'failed', taskId: 'task-1', shortId: 'NF-1', error: 'Task cancelled by user' }),
       { chatId: 1 },
     );
   });

@@ -10,8 +10,12 @@ describe('ReplyToQuestion', () => {
   let runRepo;
   let callbackSender;
 
+  let projectRepo;
+
   const makeTask = (overrides = {}) => ({
     id: 'task-1',
+    projectId: 'proj-1',
+    seqNumber: 1,
     title: 'Build feature X',
     status: 'waiting_reply',
     callbackUrl: 'https://example.com/cb',
@@ -42,11 +46,14 @@ describe('ReplyToQuestion', () => {
     runRepo = {
       findByTaskId: vi.fn().mockResolvedValue([makeRun()]),
     };
+    projectRepo = {
+      findById: vi.fn().mockResolvedValue({ id: 'proj-1', prefix: 'NF' }),
+    };
     callbackSender = {
       send: vi.fn().mockResolvedValue({ ok: true }),
     };
 
-    replyToQuestion = new ReplyToQuestion({ taskService, runService, runRepo, callbackSender });
+    replyToQuestion = new ReplyToQuestion({ taskService, runService, runRepo, projectRepo, callbackSender });
   });
 
   it('resumes task, creates new run with answer context, sends callback', async () => {
@@ -56,7 +63,7 @@ describe('ReplyToQuestion', () => {
       answer: 'Use PostgreSQL',
     });
 
-    expect(result).toEqual({ taskId: 'task-1', status: 'in_progress' });
+    expect(result).toEqual({ taskId: 'task-1', shortId: 'NF-1', status: 'in_progress' });
     expect(taskService.resumeAfterReply).toHaveBeenCalledWith('task-1');
     expect(runService.enqueue).toHaveBeenCalledWith({
       taskId: 'task-1',

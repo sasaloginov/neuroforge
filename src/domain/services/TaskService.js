@@ -2,7 +2,7 @@ import { Task } from '../entities/Task.js';
 import { RevisionLimitError } from '../errors/RevisionLimitError.js';
 import { TaskNotFoundError } from '../errors/TaskNotFoundError.js';
 
-const MAX_REVISIONS = 5;
+const MAX_REVISIONS = 3;
 
 export class TaskService {
   #taskRepo;
@@ -13,7 +13,13 @@ export class TaskService {
 
   async createTask({ projectId, title, description, callbackUrl, callbackMeta }) {
     const task = Task.create({ projectId, title, description, callbackUrl, callbackMeta });
-    await this.#taskRepo.save(task);
+    await this.#taskRepo.saveWithSeqNumber(task);
+    return task;
+  }
+
+  async getTaskByShortId(projectId, seqNumber) {
+    const task = await this.#taskRepo.findByProjectIdAndSeq(projectId, seqNumber);
+    if (!task) throw new TaskNotFoundError(`seq#${seqNumber} in project ${projectId}`);
     return task;
   }
 
@@ -65,6 +71,20 @@ export class TaskService {
     if (task.revisionCount > MAX_REVISIONS) {
       throw new RevisionLimitError(taskId, MAX_REVISIONS);
     }
+    await this.#taskRepo.save(task);
+    return task;
+  }
+
+  async escalateTask(taskId) {
+    const task = await this.getTask(taskId);
+    task.transitionTo(Task.STATUSES.NEEDS_ESCALATION);
+    await this.#taskRepo.save(task);
+    return task;
+  }
+
+  async restartTask(taskId) {
+    const task = await this.getTask(taskId);
+    task.transitionTo(Task.STATUSES.IN_PROGRESS);
     await this.#taskRepo.save(task);
     return task;
   }

@@ -1,5 +1,7 @@
 import 'dotenv/config';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, unlink, rmdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 import { createPool, closePool } from './infrastructure/persistence/pg.js';
 import { loadRoles } from './infrastructure/roles/fileRoleLoader.js';
@@ -14,6 +16,7 @@ import { PgUserRepo } from './infrastructure/persistence/PgUserRepo.js';
 import { PgApiKeyRepo } from './infrastructure/persistence/PgApiKeyRepo.js';
 import { ClaudeCLIAdapter } from './infrastructure/claude/claudeCLIAdapter.js';
 import { CallbackClient } from './infrastructure/callback/callbackClient.js';
+import { startMcpHttpServer } from './infrastructure/mcp/mcpServer.js';
 import { CreateTask } from './application/CreateTask.js';
 import { ProcessRun } from './application/ProcessRun.js';
 import { ManagerDecision } from './application/ManagerDecision.js';
@@ -21,6 +24,7 @@ import { GetTaskStatus } from './application/GetTaskStatus.js';
 import { GetRunDetail } from './application/GetRunDetail.js';
 import { CancelTask } from './application/CancelTask.js';
 import { ReplyToQuestion } from './application/ReplyToQuestion.js';
+import { RestartTask } from './application/RestartTask.js';
 import { createServer } from './infrastructure/http/server.js';
 import { createWorker } from './infrastructure/scheduler/worker.js';
 import { ManagerScheduler } from './infrastructure/scheduler/managerScheduler.js';
@@ -52,10 +56,28 @@ async function main() {
   const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8'));
   const version = packageJson.version;
 
-  // 3. PG pool
+  // 3. PG pool + auto-migrate
   createPool(config.databaseUrl);
 
-  // 3. Roles
+  const knexConfig = (await import('./infrastructure/persistence/knexfile.js')).default;
+  const migrationsDir = new URL('./infrastructure/persistence/migrations', import.meta.url).pathname;
+  const knex = (await import('knex')).default({
+    ...knexConfig,
+    migrations: { ...knexConfig.migrations, directory: migrationsDir },
+  });
+  try {
+    const [batch, log] = await knex.migrate.latest();
+    if (log.length > 0) {
+      console.log('[init] Migrations applied (batch %d): %s', batch, log.join(', '));
+    }
+  } catch (err) {
+    console.error('[init] Migration failed:', err.message);
+    process.exit(1);
+  } finally {
+    await knex.destroy();
+  }
+
+  // 4. Roles
   const roles = await loadRoles(config.rolesDir);
   const roleRegistry = new RoleRegistry();
   for (const role of roles) {
@@ -72,8 +94,38 @@ async function main() {
   const apiKeyRepo = new PgApiKeyRepo();
 
   // 5. Adapters
-  const chatEngine = new ClaudeCLIAdapter({ roleRegistry, workDir: config.workDir });
   const callbackSender = new CallbackClient();
+
+  // 5a. MCP HTTP server (single long-lived process, SSE transport)
+  const mcpPort = parseInt(process.env.MCP_PORT || '3100', 10);
+  const mcpHttpServer = await startMcpHttpServer(
+    { runRepo, taskRepo, callbackSender, logger: console },
+    mcpPort,
+  );
+
+  // 5b. Write a shared mcp-config.json pointing at the HTTP server (with auth token)
+  const mcpTmpDir = await mkdtemp(join(tmpdir(), 'neuroforge-mcp-'));
+  const mcpConfigPath = join(mcpTmpDir, 'mcp-config.json');
+  await writeFile(
+    mcpConfigPath,
+    JSON.stringify({
+      mcpServers: {
+        neuroforge: {
+          type: 'sse',
+          url: `http://localhost:${mcpPort}/sse`,
+          headers: { Authorization: `Bearer ${mcpHttpServer.secret}` },
+        },
+      },
+    }, null, 2),
+    { encoding: 'utf-8', mode: 0o600 },
+  );
+  console.log('[init] MCP config written to %s', mcpConfigPath);
+
+  const chatEngine = new ClaudeCLIAdapter({
+    roleRegistry,
+    workDir: config.workDir,
+    mcpConfigPath,
+  });
 
   // 6. Domain services
   const taskService = new TaskService({ taskRepo });
@@ -83,10 +135,11 @@ async function main() {
   const createTask = new CreateTask({ taskService, runService, roleRegistry, projectRepo, callbackSender });
   const processRun = new ProcessRun({ runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender });
   const managerDecision = new ManagerDecision({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, logger: console });
-  const getTaskStatus = new GetTaskStatus({ taskService, runRepo });
+  const getTaskStatus = new GetTaskStatus({ taskService, runRepo, projectRepo });
   const getRunDetail = new GetRunDetail({ taskService, runRepo });
-  const cancelTask = new CancelTask({ taskService, runRepo, callbackSender });
-  const replyToQuestion = new ReplyToQuestion({ taskService, runService, runRepo, callbackSender });
+  const cancelTask = new CancelTask({ taskService, runRepo, projectRepo, callbackSender });
+  const replyToQuestion = new ReplyToQuestion({ taskService, runService, runRepo, projectRepo, callbackSender });
+  const restartTask = new RestartTask({ taskService, runRepo, projectRepo, managerDecision, callbackSender });
 
   // 8. Worker + Scheduler
   const worker = createWorker({ processRun, managerDecision, logger: console });
@@ -105,12 +158,12 @@ async function main() {
     database: new DatabaseHealthChecker({ pool: getPool() }),
     scheduler: new SchedulerHealthChecker({ scheduler }),
   };
-  const useCases = { createTask, getTaskStatus, getRunDetail, cancelTask, replyToQuestion };
+  const useCases = { createTask, getTaskStatus, getRunDetail, cancelTask, replyToQuestion, restartTask };
   const repos = { apiKeyRepo, userRepo, projectRepo, taskRepo, runRepo };
   const server = await createServer({ useCases, repos, checkers, version, startedAt });
 
   // 10. Graceful shutdown
-  setupShutdown({ server, scheduler });
+  setupShutdown({ server, scheduler, mcpHttpServer, mcpConfigPath, mcpTmpDir });
 
   // 11. Start
   await server.listen({ port: config.port, host: config.host });
@@ -119,7 +172,7 @@ async function main() {
   await scheduler.start();
 }
 
-function setupShutdown({ server, scheduler }) {
+function setupShutdown({ server, scheduler, mcpHttpServer, mcpConfigPath, mcpTmpDir }) {
   let shuttingDown = false;
 
   const shutdown = async (signal) => {
@@ -136,7 +189,21 @@ function setupShutdown({ server, scheduler }) {
       await server.close();
       console.log('[shutdown] Server closed');
 
-      // 3. Close PG pool
+      // 3. Close MCP HTTP server
+      if (mcpHttpServer && mcpHttpServer.closeMcp) {
+        await mcpHttpServer.closeMcp();
+        console.log('[shutdown] MCP server closed');
+      }
+
+      // 4. Cleanup MCP config temp file
+      try {
+        await unlink(mcpConfigPath);
+        await rmdir(mcpTmpDir);
+      } catch {
+        // Ignore cleanup errors
+      }
+
+      // 5. Close PG pool
       await closePool();
       console.log('[shutdown] PG pool closed');
 

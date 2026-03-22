@@ -14,12 +14,13 @@ const RUN_ID = '00000000-0000-0000-0000-000000000300';
 function buildUseCases(overrides = {}) {
   return {
     createTask: {
-      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, status: 'in_progress' }),
+      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
     },
     getTaskStatus: {
       execute: vi.fn().mockResolvedValue({
         task: {
           id: TASK_ID,
+          shortId: 'NF-1',
           projectId: PROJECT_ID,
           title: 'Test Task',
           status: 'in_progress',
@@ -48,10 +49,10 @@ function buildUseCases(overrides = {}) {
       }),
     },
     replyToQuestion: {
-      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, status: 'in_progress' }),
+      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
     },
     cancelTask: {
-      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, status: 'cancelled', cancelledRuns: 1 }),
+      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'cancelled', cancelledRuns: 1 }),
     },
     ...overrides,
   };
@@ -284,6 +285,7 @@ describe('taskRoutes', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.json().taskId).toBe(TASK_ID);
+      expect(res.json().shortId).toBe('NF-1');
       expect(useCases.replyToQuestion.execute).toHaveBeenCalled();
     });
 
@@ -337,6 +339,7 @@ describe('taskRoutes', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.json().taskId).toBe(TASK_ID);
+      expect(res.json().shortId).toBe('NF-1');
       expect(res.json().cancelledRuns).toBe(1);
     });
 

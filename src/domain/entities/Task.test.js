@@ -44,6 +44,36 @@ describe('Task', () => {
       expect(task.status).toBe('failed');
     });
 
+    it('in_progress → needs_escalation', () => {
+      const task = Task.create(defaults);
+      task.transitionTo('in_progress');
+      task.transitionTo('needs_escalation');
+      expect(task.status).toBe('needs_escalation');
+    });
+
+    it('needs_escalation → in_progress', () => {
+      const task = Task.create(defaults);
+      task.transitionTo('in_progress');
+      task.transitionTo('needs_escalation');
+      task.transitionTo('in_progress');
+      expect(task.status).toBe('in_progress');
+    });
+
+    it('needs_escalation → cancelled', () => {
+      const task = Task.create(defaults);
+      task.transitionTo('in_progress');
+      task.transitionTo('needs_escalation');
+      task.transitionTo('cancelled');
+      expect(task.status).toBe('cancelled');
+    });
+
+    it('rejects needs_escalation → done', () => {
+      const task = Task.create(defaults);
+      task.transitionTo('in_progress');
+      task.transitionTo('needs_escalation');
+      expect(() => task.transitionTo('done')).toThrow(InvalidTransitionError);
+    });
+
     it('rejects invalid transition pending → done', () => {
       const task = Task.create(defaults);
       expect(() => task.transitionTo('done')).toThrow(InvalidTransitionError);
@@ -65,6 +95,18 @@ describe('Task', () => {
     });
   });
 
+  describe('seqNumber', () => {
+    it('create accepts seqNumber', () => {
+      const task = Task.create({ ...defaults, seqNumber: 5 });
+      expect(task.seqNumber).toBe(5);
+    });
+
+    it('create defaults seqNumber to null', () => {
+      const task = Task.create(defaults);
+      expect(task.seqNumber).toBeNull();
+    });
+  });
+
   describe('serialization', () => {
     it('roundtrips through toRow/fromRow', () => {
       const task = Task.create(defaults);
@@ -74,6 +116,20 @@ describe('Task', () => {
       expect(restored.projectId).toBe(task.projectId);
       expect(restored.status).toBe(task.status);
       expect(restored.callbackMeta).toEqual(task.callbackMeta);
+    });
+
+    it('roundtrips seqNumber through toRow/fromRow', () => {
+      const task = Task.create({ ...defaults, seqNumber: 7 });
+      const row = task.toRow();
+      expect(row.seq_number).toBe(7);
+      const restored = Task.fromRow(row);
+      expect(restored.seqNumber).toBe(7);
+    });
+
+    it('does not have projectPrefix — shortId is computed in application layer', () => {
+      const task = Task.create({ ...defaults, seqNumber: 3 });
+      expect(task).not.toHaveProperty('projectPrefix');
+      expect(task).not.toHaveProperty('shortId');
     });
   });
 });

@@ -47,14 +47,18 @@ export class CreateTask {
 
     await this.#taskService.advanceTask(task.id);
 
+    const shortId = project.prefix && task.seqNumber != null
+      ? `${project.prefix}-${task.seqNumber}`
+      : undefined;
+
     if (callbackUrl) {
       await this.#callbackSender.send(
         callbackUrl,
-        { type: 'progress', taskId: task.id, stage: 'queued', message: 'Задача принята, начинаю анализ' },
+        { type: 'progress', taskId: task.id, shortId, stage: 'queued', message: 'Задача принята, начинаю анализ' },
         callbackMeta,
       );
     }
 
-    return { taskId: task.id, status: 'in_progress' };
+    return { taskId: task.id, shortId, status: 'in_progress' };
   }
 }

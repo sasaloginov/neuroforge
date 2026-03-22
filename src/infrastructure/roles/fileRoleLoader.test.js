@@ -34,7 +34,7 @@ describe('FileRoleLoader', () => {
       const roles = await loadRoles(ROLES_DIR);
       const analyst = roles.find((r) => r.name === 'analyst');
       expect(analyst.model).toBe('opus');
-      expect(analyst.timeoutMs).toBe(300000);
+      expect(analyst.timeoutMs).toBe(1800000);
       expect(analyst.allowedTools).toContain('Read');
       expect(analyst.allowedTools).toContain('WebSearch');
       expect(analyst.systemPrompt).toContain('аналитик');

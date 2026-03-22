@@ -1,12 +1,14 @@
 import { Project } from '../../../domain/entities/Project.js';
+import { DuplicatePrefixError } from '../../../domain/errors/DuplicatePrefixError.js';
 import { assertProjectScope, assertAdmin } from '../scopeHelpers.js';
 
 const createProjectSchema = {
   body: {
     type: 'object',
-    required: ['name', 'repoUrl'],
+    required: ['name', 'prefix', 'repoUrl'],
     properties: {
       name: { type: 'string', minLength: 1, maxLength: 128, pattern: '^[a-z0-9_-]+$' },
+      prefix: { type: 'string', minLength: 1, maxLength: 10, pattern: '^[A-Za-z][A-Za-z0-9]{0,9}$' },
       repoUrl: { type: 'string', format: 'uri', maxLength: 512 },
       workDir: { type: 'string', maxLength: 512 },
     },
@@ -18,6 +20,7 @@ const createProjectSchema = {
       properties: {
         id: { type: 'string' },
         name: { type: 'string' },
+        prefix: { type: 'string' },
         repoUrl: { type: 'string' },
         workDir: { type: 'string', nullable: true },
         createdAt: { type: 'string', format: 'date-time' },
@@ -49,7 +52,7 @@ const projectTasksSchema = {
     properties: {
       status: {
         type: 'string',
-        enum: ['pending', 'in_progress', 'waiting_reply', 'done', 'failed', 'cancelled'],
+        enum: ['pending', 'in_progress', 'waiting_reply', 'needs_escalation', 'done', 'failed', 'cancelled'],
       },
     },
   },
@@ -66,8 +69,11 @@ export function projectRoutes({ repos }) {
       try {
         await projectRepo.save(project);
       } catch (err) {
-        // Unique constraint violation on name
         if (err.code === '23505') {
+          // Unique constraint violation — distinguish prefix vs name
+          if (err.constraint === 'uq_projects_prefix') {
+            throw new DuplicatePrefixError(request.body.prefix);
+          }
           const conflict = new Error(`Project with name "${request.body.name}" already exists`);
           conflict.statusCode = 409;
           throw conflict;
@@ -78,6 +84,7 @@ export function projectRoutes({ repos }) {
       return reply.code(201).send({
         id: project.id,
         name: project.name,
+        prefix: project.prefix,
         repoUrl: project.repoUrl,
         workDir: project.workDir,
         createdAt: project.createdAt,
@@ -97,6 +104,7 @@ export function projectRoutes({ repos }) {
         projects: projects.map(p => ({
           id: p.id,
           name: p.name,
+          prefix: p.prefix,
           repoUrl: p.repoUrl,
         })),
       });
@@ -115,6 +123,7 @@ export function projectRoutes({ repos }) {
       return reply.send({
         id: project.id,
         name: project.name,
+        prefix: project.prefix,
         repoUrl: project.repoUrl,
         workDir: project.workDir,
         createdAt: project.createdAt,
@@ -141,6 +150,9 @@ export function projectRoutes({ repos }) {
       return reply.send({
         tasks: tasks.map(t => ({
           id: t.id,
+          shortId: project.prefix && t.seqNumber != null
+            ? `${project.prefix}-${t.seqNumber}`
+            : undefined,
           title: t.title,
           status: t.status,
           createdAt: t.createdAt,

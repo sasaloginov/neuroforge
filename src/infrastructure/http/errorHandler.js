@@ -10,6 +10,7 @@ const CODE_TO_STATUS = {
   INVALID_STATE: 409,
   INVALID_TRANSITION: 409,
   REVISION_LIMIT: 409,
+  DUPLICATE_PREFIX: 409,
 };
 
 export function errorHandler(error, request, reply) {

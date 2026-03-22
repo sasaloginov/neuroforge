@@ -3,9 +3,20 @@ import { Run } from '../../domain/entities/Run.js';
 import { getPool } from './pg.js';
 
 export class PgRunRepo extends IRunRepo {
+  /** @param {{ pool?: import('pg').Pool }} [options] */
+  constructor({ pool } = {}) {
+    super();
+    this._pool = pool;
+  }
+
+  /** @returns {import('pg').Pool} */
+  _getPool() {
+    return this._pool || getPool();
+  }
+
   /** @returns {Run|null} */
   async findById(id) {
-    const { rows } = await getPool().query(
+    const { rows } = await this._getPool().query(
       'SELECT * FROM runs WHERE id = $1',
       [id],
     );
@@ -14,7 +25,7 @@ export class PgRunRepo extends IRunRepo {
 
   /** @returns {Run[]} */
   async findByTaskId(taskId) {
-    const { rows } = await getPool().query(
+    const { rows } = await this._getPool().query(
       'SELECT * FROM runs WHERE task_id = $1 ORDER BY created_at',
       [taskId],
     );
@@ -23,7 +34,7 @@ export class PgRunRepo extends IRunRepo {
 
   /** @returns {Run[]} — all runs with status 'running' */
   async findRunning() {
-    const { rows } = await getPool().query(
+    const { rows } = await this._getPool().query(
       "SELECT * FROM runs WHERE status = 'running' ORDER BY started_at",
     );
     return rows.map(Run.fromRow);
@@ -32,7 +43,7 @@ export class PgRunRepo extends IRunRepo {
   /** Upsert a run. */
   async save(run) {
     const r = run.toRow();
-    await getPool().query(
+    await this._getPool().query(
       `INSERT INTO runs (id, session_id, task_id, step_id, role_name, prompt, response, status, callback_url, callback_meta, started_at, finished_at, duration_ms, error, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        ON CONFLICT (id) DO UPDATE SET
@@ -62,8 +73,8 @@ export class PgRunRepo extends IRunRepo {
    * @returns {Run|null}
    */
   async takeNext() {
-    const pool = getPool();
-    const client = await pool.connect();
+    const p = this._getPool();
+    const client = await p.connect();
     try {
       await client.query('BEGIN');
 

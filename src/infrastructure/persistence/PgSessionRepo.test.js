@@ -15,8 +15,8 @@ describe.skipIf(!DATABASE_URL)('PgSessionRepo (integration)', () => {
 
     projectId = crypto.randomUUID();
     await getPool().query(
-      `INSERT INTO projects (id, name, repo_url) VALUES ($1, $2, $3)`,
-      [projectId, `test-proj-sess-${projectId.slice(0, 8)}`, 'https://github.com/test/repo'],
+      `INSERT INTO projects (id, name, prefix, repo_url) VALUES ($1, $2, $3, $4)`,
+      [projectId, `test-proj-sess-${projectId.slice(0, 8)}`, 'TSTSSS', 'https://github.com/test/repo'],
     );
   });
 

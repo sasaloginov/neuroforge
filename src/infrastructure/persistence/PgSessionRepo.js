@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { ISessionRepo } from '../../domain/ports/ISessionRepo.js';
 import { Session } from '../../domain/entities/Session.js';
 import { getPool } from './pg.js';
@@ -35,6 +36,48 @@ export class PgSessionRepo extends ISessionRepo {
          updated_at = EXCLUDED.updated_at`,
       [r.id, r.project_id, r.cli_session_id, r.role_name, r.status, r.created_at, r.updated_at],
     );
+  }
+
+  /** Atomically find or create an active session for project+role. */
+  async findOrCreate(projectId, roleName) {
+    const pool = getPool();
+    const now = new Date();
+
+    await pool.query('BEGIN');
+    try {
+      // Lock existing active session row (if any) to prevent race conditions
+      const existing = await pool.query(
+        `SELECT * FROM sessions
+         WHERE project_id = $1 AND role_name = $2 AND status = 'active'
+         LIMIT 1
+         FOR UPDATE`,
+        [projectId, roleName],
+      );
+
+      let row;
+      if (existing.rows.length > 0) {
+        const { rows } = await pool.query(
+          `UPDATE sessions SET updated_at = $1 WHERE id = $2 RETURNING *`,
+          [now, existing.rows[0].id],
+        );
+        row = rows[0];
+      } else {
+        const id = crypto.randomUUID();
+        const { rows } = await pool.query(
+          `INSERT INTO sessions (id, project_id, cli_session_id, role_name, status, created_at, updated_at)
+           VALUES ($1, $2, NULL, $3, 'active', $4, $5)
+           RETURNING *`,
+          [id, projectId, roleName, now, now],
+        );
+        row = rows[0];
+      }
+
+      await pool.query('COMMIT');
+      return Session.fromRow(row);
+    } catch (err) {
+      await pool.query('ROLLBACK');
+      throw err;
+    }
   }
 
   async delete(id) {

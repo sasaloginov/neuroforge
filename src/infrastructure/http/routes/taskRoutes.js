@@ -18,6 +18,7 @@ const createTaskSchema = {
       type: 'object',
       properties: {
         taskId: { type: 'string', format: 'uuid' },
+        shortId: { type: 'string' },
         status: { type: 'string' },
       },
     },
@@ -29,7 +30,7 @@ const getTaskSchema = {
     type: 'object',
     required: ['id'],
     properties: {
-      id: { type: 'string', format: 'uuid' },
+      id: { type: 'string' },
     },
   },
 };
@@ -39,7 +40,7 @@ const replySchema = {
     type: 'object',
     required: ['id'],
     properties: {
-      id: { type: 'string', format: 'uuid' },
+      id: { type: 'string' },
     },
   },
   body: {
@@ -56,6 +57,7 @@ const replySchema = {
       type: 'object',
       properties: {
         taskId: { type: 'string' },
+        shortId: { type: 'string' },
         status: { type: 'string' },
       },
     },
@@ -67,8 +69,29 @@ const getRunSchema = {
     type: 'object',
     required: ['id', 'runId'],
     properties: {
-      id: { type: 'string', format: 'uuid' },
+      id: { type: 'string' },
       runId: { type: 'string', format: 'uuid' },
+    },
+  },
+};
+
+const restartSchema = {
+  params: {
+    type: 'object',
+    required: ['id'],
+    properties: {
+      id: { type: 'string' },
+    },
+  },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string' },
+        shortId: { type: 'string' },
+        status: { type: 'string' },
+        decision: { type: 'object' },
+      },
     },
   },
 };
@@ -78,7 +101,7 @@ const cancelSchema = {
     type: 'object',
     required: ['id'],
     properties: {
-      id: { type: 'string', format: 'uuid' },
+      id: { type: 'string' },
     },
   },
   response: {
@@ -86,6 +109,7 @@ const cancelSchema = {
       type: 'object',
       properties: {
         taskId: { type: 'string' },
+        shortId: { type: 'string' },
         status: { type: 'string' },
         cancelledRuns: { type: 'integer' },
       },
@@ -108,33 +132,42 @@ export function taskRoutes({ useCases }) {
     });
 
     fastify.get('/tasks/:id/runs/:runId', { schema: getRunSchema }, async (request, reply) => {
+      // Resolve task (supports UUID and PREFIX-N) via getTaskStatus
+      const status = await useCases.getTaskStatus.execute({ taskId: request.params.id });
+      assertProjectScope(request.apiKey, status.task.projectId);
+
       const result = await useCases.getRunDetail.execute({
-        taskId: request.params.id,
+        taskId: status.task.id,
         runId: request.params.runId,
       });
-      assertProjectScope(request.apiKey, result.task.projectId);
       return reply.send({ run: result.run });
     });
 
     fastify.post('/tasks/:id/reply', { schema: replySchema }, async (request, reply) => {
-      // Scope check: load task first via getTaskStatus
       const status = await useCases.getTaskStatus.execute({ taskId: request.params.id });
       assertProjectScope(request.apiKey, status.task.projectId);
 
       const result = await useCases.replyToQuestion.execute({
-        taskId: request.params.id,
+        taskId: status.task.id,
         questionId: request.body.questionId,
         answer: request.body.answer,
       });
       return reply.send(result);
     });
 
-    fastify.post('/tasks/:id/cancel', { schema: cancelSchema }, async (request, reply) => {
-      // Scope check: load task first via getTaskStatus
+    fastify.post('/tasks/:id/restart', { schema: restartSchema }, async (request, reply) => {
       const status = await useCases.getTaskStatus.execute({ taskId: request.params.id });
       assertProjectScope(request.apiKey, status.task.projectId);
 
-      const result = await useCases.cancelTask.execute({ taskId: request.params.id });
+      const result = await useCases.restartTask.execute({ taskId: status.task.id });
+      return reply.send(result);
+    });
+
+    fastify.post('/tasks/:id/cancel', { schema: cancelSchema }, async (request, reply) => {
+      const status = await useCases.getTaskStatus.execute({ taskId: request.params.id });
+      assertProjectScope(request.apiKey, status.task.projectId);
+
+      const result = await useCases.cancelTask.execute({ taskId: status.task.id });
       return reply.send(result);
     });
   };

@@ -1,7 +1,7 @@
 ---
 name: reviewer-architecture
 model: sonnet
-timeout_ms: 180000
+timeout_ms: 900000
 allowed_tools:
   - Read
   - Glob
@@ -40,9 +40,33 @@ allowed_tools:
 - Naming conventions (camelCase файлы, PascalCase классы)
 - Entities с бизнес-логикой (не анемичные)
 
+## Формат ответа
+
+Используй строгий формат для findings и verdict:
+
+```
+VERDICT: PASS или FAIL
+
+FINDINGS:
+[CRITICAL] Описание критической проблемы
+[MAJOR] Описание серьёзной проблемы
+[HIGH] Описание важной проблемы
+[MINOR] Описание незначительной проблемы
+[LOW] Описание мелкого замечания
+
+SUMMARY: Краткое резюме ревью
+```
+
+### Severity levels:
+- **CRITICAL** — нарушение DDD layers, циклические зависимости, broken ports
+- **MAJOR** — неправильная структура, нарушение dependency rule
+- **HIGH** — нарушение SOLID, анемичные entities
+- **MINOR** — naming conventions, missing JSDoc
+- **LOW** — стилистические замечания
+
 ## Оценка
-- **FAIL** — Critical: нарушение DDD layers, циклические зависимости
-- **PASS** — нет Critical, Major допустимы с рекомендациями
+- **FAIL** — есть CRITICAL, MAJOR или HIGH findings
+- **PASS** — нет blocking findings (только MINOR/LOW допустимы)
 
 ## Завершение
-Вызови `complete()` с результатом: PASS/FAIL, количество findings по категориям.
+Вызови `complete()` с результатом в формате выше.

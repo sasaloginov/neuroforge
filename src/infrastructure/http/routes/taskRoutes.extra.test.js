@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createTestServer, authHeader } from '../testHelper.js';
 import { taskRoutes } from './taskRoutes.js';
 import { TaskNotFoundError } from '../../../domain/errors/TaskNotFoundError.js';
+import { ProjectNotFoundError } from '../../../domain/errors/ProjectNotFoundError.js';
 import { ApiKey } from '../../../domain/entities/ApiKey.js';
 import { createHash } from 'node:crypto';
 
@@ -11,12 +12,13 @@ const TASK_ID = '00000000-0000-0000-0000-000000000200';
 function buildUseCases(overrides = {}) {
   return {
     createTask: {
-      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, status: 'in_progress' }),
+      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
     },
     getTaskStatus: {
       execute: vi.fn().mockResolvedValue({
         task: {
           id: TASK_ID,
+          shortId: 'NF-1',
           projectId: PROJECT_ID,
           title: 'Test Task',
           status: 'in_progress',
@@ -28,13 +30,21 @@ function buildUseCases(overrides = {}) {
       }),
     },
     replyToQuestion: {
-      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, status: 'in_progress' }),
+      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
     },
     cancelTask: {
-      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, status: 'cancelled', cancelledRuns: 1 }),
+      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'cancelled', cancelledRuns: 1 }),
     },
     ...overrides,
   };
+}
+
+function setup(useCaseOverrides = {}) {
+  const useCases = buildUseCases(useCaseOverrides);
+  const server = createTestServer({
+    registerRoutes: (a) => a.register(taskRoutes({ useCases }), { prefix: '/' }),
+  });
+  return { ...server, useCases };
 }
 
 describe('taskRoutes — additional coverage', () => {
@@ -44,49 +54,60 @@ describe('taskRoutes — additional coverage', () => {
     if (app) await app.close();
   });
 
-  it('GET /tasks/:id returns 400 for invalid UUID param', async () => {
-    const useCases = buildUseCases();
-    const server = createTestServer({
-      registerRoutes: (a) => a.register(taskRoutes({ useCases }), { prefix: '/' }),
-    });
-    app = server.app;
+  it('GET /tasks/:id passes short ID to getTaskStatus use case', async () => {
+    const { app: a, useCases } = setup();
+    app = a;
     await app.ready();
 
     const res = await app.inject({
       method: 'GET',
-      url: '/tasks/not-a-uuid',
+      url: '/tasks/NF-3',
       headers: authHeader(),
     });
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(200);
+    // Short ID resolution now happens inside GetTaskStatus use case
+    expect(useCases.getTaskStatus.execute).toHaveBeenCalledWith({ taskId: 'NF-3' });
   });
 
-  it('POST /tasks/:id/reply returns 400 for invalid UUID param', async () => {
-    const useCases = buildUseCases();
-    const server = createTestServer({
-      registerRoutes: (a) => a.register(taskRoutes({ useCases }), { prefix: '/' }),
+  it('GET /tasks/:id returns 404 when GetTaskStatus throws ProjectNotFoundError for unknown prefix', async () => {
+    const { app: a } = setup({
+      getTaskStatus: {
+        execute: vi.fn().mockRejectedValue(new ProjectNotFoundError('UNKNOWN')),
+      },
     });
-    app = server.app;
+    app = a;
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/tasks/UNKNOWN-1',
+      headers: authHeader(),
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('POST /tasks/:id/reply passes short ID through getTaskStatus', async () => {
+    const { app: a, useCases } = setup();
+    app = a;
     await app.ready();
 
     const res = await app.inject({
       method: 'POST',
-      url: '/tasks/not-a-uuid/reply',
+      url: '/tasks/NF-1/reply',
       headers: authHeader(),
       payload: { answer: 'Yes' },
     });
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(200);
+    expect(useCases.getTaskStatus.execute).toHaveBeenCalledWith({ taskId: 'NF-1' });
   });
 
   it('POST /tasks/:id/cancel returns 404 when task not found', async () => {
-    const useCases = buildUseCases({
+    const { app: a } = setup({
       getTaskStatus: {
         execute: vi.fn().mockRejectedValue(new TaskNotFoundError(TASK_ID)),
       },
     });
-    const server = createTestServer({
-      registerRoutes: (a) => a.register(taskRoutes({ useCases }), { prefix: '/' }),
-    });
-    app = server.app;
+    app = a;
     await app.ready();
 
     const res = await app.inject({
@@ -130,11 +151,8 @@ describe('taskRoutes — additional coverage', () => {
   });
 
   it('POST /tasks with callbackUrl passes it to use case', async () => {
-    const useCases = buildUseCases();
-    const server = createTestServer({
-      registerRoutes: (a) => a.register(taskRoutes({ useCases }), { prefix: '/' }),
-    });
-    app = server.app;
+    const { app: a, useCases } = setup();
+    app = a;
     await app.ready();
 
     const res = await app.inject({
@@ -155,14 +173,8 @@ describe('taskRoutes — additional coverage', () => {
   });
 
   it('POST /tasks ignores additional unknown properties (Fastify default removeAdditional)', async () => {
-    // NOTE: Fastify default AJV config removes additional properties rather than rejecting.
-    // The schema has additionalProperties: false, but Fastify's removeAdditional strips them.
-    // If strict rejection is desired, server must set ajv option removeAdditional: false.
-    const useCases = buildUseCases();
-    const server = createTestServer({
-      registerRoutes: (a) => a.register(taskRoutes({ useCases }), { prefix: '/' }),
-    });
-    app = server.app;
+    const { app: a, useCases } = setup();
+    app = a;
     await app.ready();
 
     const res = await app.inject({
@@ -171,10 +183,95 @@ describe('taskRoutes — additional coverage', () => {
       headers: authHeader(),
       payload: { projectId: PROJECT_ID, title: 'T', unknownField: 'xyz' },
     });
-    // Additional properties are stripped, not rejected
     expect(res.statusCode).toBe(202);
-    // The unknown field should not be passed to the use case
     const callArgs = useCases.createTask.execute.mock.calls[0][0];
     expect(callArgs.unknownField).toBeUndefined();
+  });
+});
+
+// ─── POST /tasks/:id/restart — shortId coverage ───────────────────────────
+
+describe('taskRoutes — restart endpoint', () => {
+  let app;
+
+  afterEach(async () => {
+    if (app) await app.close();
+  });
+
+  function setupWithRestart(overrides = {}) {
+    const useCases = {
+      createTask: {
+        execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
+      },
+      getTaskStatus: {
+        execute: vi.fn().mockResolvedValue({
+          task: {
+            id: TASK_ID,
+            shortId: 'NF-1',
+            projectId: PROJECT_ID,
+            title: 'Test Task',
+            status: 'failed',
+            revisionCount: 0,
+            createdAt: new Date('2025-01-01').toISOString(),
+            updatedAt: new Date('2025-01-01').toISOString(),
+          },
+          runs: [],
+        }),
+      },
+      getRunDetail: {
+        execute: vi.fn().mockResolvedValue({}),
+      },
+      replyToQuestion: {
+        execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
+      },
+      cancelTask: {
+        execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'cancelled', cancelledRuns: 0 }),
+      },
+      restartTask: {
+        execute: vi.fn().mockResolvedValue({
+          taskId: TASK_ID,
+          shortId: 'NF-1',
+          status: 'in_progress',
+          decision: { action: 'spawn_run', role: 'developer' },
+        }),
+      },
+      ...overrides,
+    };
+    const server = createTestServer({
+      registerRoutes: (f) => f.register(taskRoutes({ useCases }), { prefix: '/' }),
+    });
+    return { ...server, useCases };
+  }
+
+  it('POST /tasks/:id/restart returns 200 with shortId', async () => {
+    const { app: a, useCases } = setupWithRestart();
+    app = a;
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/tasks/${TASK_ID}/restart`,
+      headers: authHeader(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().taskId).toBe(TASK_ID);
+    expect(res.json().shortId).toBe('NF-1');
+    expect(useCases.restartTask.execute).toHaveBeenCalledWith({ taskId: TASK_ID });
+  });
+
+  it('POST /tasks/NF-1/restart passes short ID through getTaskStatus', async () => {
+    const { app: a, useCases } = setupWithRestart();
+    app = a;
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/tasks/NF-1/restart',
+      headers: authHeader(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(useCases.getTaskStatus.execute).toHaveBeenCalledWith({ taskId: 'NF-1' });
   });
 });

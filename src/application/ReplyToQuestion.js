@@ -4,12 +4,14 @@ export class ReplyToQuestion {
   #taskService;
   #runService;
   #runRepo;
+  #projectRepo;
   #callbackSender;
 
-  constructor({ taskService, runService, runRepo, callbackSender }) {
+  constructor({ taskService, runService, runRepo, projectRepo, callbackSender }) {
     this.#taskService = taskService;
     this.#runService = runService;
     this.#runRepo = runRepo;
+    this.#projectRepo = projectRepo;
     this.#callbackSender = callbackSender;
   }
 
@@ -42,14 +44,19 @@ export class ReplyToQuestion {
       callbackMeta: task.callbackMeta,
     });
 
+    const project = await this.#projectRepo.findById(task.projectId);
+    const shortId = project?.prefix && task.seqNumber != null
+      ? `${project.prefix}-${task.seqNumber}`
+      : undefined;
+
     if (task.callbackUrl) {
       await this.#callbackSender.send(
         task.callbackUrl,
-        { type: 'progress', taskId, stage: 'reply_received', message: 'Ответ получен, продолжаю работу' },
+        { type: 'progress', taskId, shortId, stage: 'reply_received', message: 'Ответ получен, продолжаю работу' },
         task.callbackMeta,
       );
     }
 
-    return { taskId, status: 'in_progress' };
+    return { taskId, shortId, status: 'in_progress' };
   }
 }

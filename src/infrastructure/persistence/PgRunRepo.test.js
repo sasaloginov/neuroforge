@@ -9,6 +9,7 @@ describe.skipIf(!DATABASE_URL)('PgRunRepo (integration)', () => {
   let repo;
   let projectId;
   let taskId;
+  let sessionId;
 
   beforeAll(async () => {
     createPool(DATABASE_URL);
@@ -16,19 +17,25 @@ describe.skipIf(!DATABASE_URL)('PgRunRepo (integration)', () => {
 
     projectId = crypto.randomUUID();
     taskId = crypto.randomUUID();
+    sessionId = crypto.randomUUID();
 
     await getPool().query(
-      `INSERT INTO projects (id, name, repo_url) VALUES ($1, $2, $3)`,
-      [projectId, `test-proj-run-${projectId.slice(0, 8)}`, 'https://github.com/test/repo'],
+      `INSERT INTO projects (id, name, prefix, repo_url) VALUES ($1, $2, $3, $4)`,
+      [projectId, `test-proj-run-${projectId.slice(0, 8)}`, 'TSTRUN', 'https://github.com/test/repo'],
     );
     await getPool().query(
-      `INSERT INTO tasks (id, project_id, title) VALUES ($1, $2, $3)`,
-      [taskId, projectId, 'Test Task for Runs'],
+      `INSERT INTO tasks (id, project_id, title, seq_number) VALUES ($1, $2, $3, $4)`,
+      [taskId, projectId, 'Test Task for Runs', 1],
+    );
+    await getPool().query(
+      `INSERT INTO sessions (id, project_id, role_name, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [sessionId, projectId, 'analyst', 'active', new Date(), new Date()],
     );
   });
 
   afterAll(async () => {
     await getPool().query('DELETE FROM runs WHERE task_id = $1', [taskId]);
+    await getPool().query('DELETE FROM sessions WHERE id = $1', [sessionId]);
     await getPool().query('DELETE FROM tasks WHERE id = $1', [taskId]);
     await getPool().query('DELETE FROM projects WHERE id = $1', [projectId]);
     await closePool();
@@ -66,7 +73,7 @@ describe.skipIf(!DATABASE_URL)('PgRunRepo (integration)', () => {
 
   it('findRunning', async () => {
     const r1 = Run.create({ taskId, roleName: 'analyst', prompt: 'p1' });
-    r1.start('session-1');
+    r1.start(sessionId);
     await repo.save(r1);
 
     const running = await repo.findRunning();
@@ -78,12 +85,12 @@ describe.skipIf(!DATABASE_URL)('PgRunRepo (integration)', () => {
     const run = Run.create({ taskId, roleName: 'analyst', prompt: 'p1' });
     await repo.save(run);
 
-    run.start('session-1');
+    run.start(sessionId);
     await repo.save(run);
 
     const found = await repo.findById(run.id);
     expect(found.status).toBe('running');
-    expect(found.sessionId).toBe('session-1');
+    expect(found.sessionId).toBe(sessionId);
   });
 
   it('takeNext dequeues the oldest queued run', async () => {

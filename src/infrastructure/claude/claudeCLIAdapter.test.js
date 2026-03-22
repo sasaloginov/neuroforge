@@ -108,7 +108,7 @@ describe('ClaudeCLIAdapter', () => {
     expect(result.sessionId).toBe('sess-123');
   });
 
-  it('adds --session-id and --resume when sessionId is provided', async () => {
+  it('adds --resume with sessionId when sessionId is provided', async () => {
     const proc = createFakeProc();
     mockSpawn.mockReturnValue(proc);
 
@@ -126,12 +126,13 @@ describe('ClaudeCLIAdapter', () => {
     await promise;
 
     const args = mockSpawn.mock.calls[0][1];
-    expect(args).toContain('--session-id');
-    expect(args).toContain('existing-session');
     expect(args).toContain('--resume');
+    expect(args).toContain('existing-session');
+    const resumeIdx = args.indexOf('--resume');
+    expect(args[resumeIdx + 1]).toBe('existing-session');
   });
 
-  it('does not add --session-id/--resume without sessionId', async () => {
+  it('does not add --resume without sessionId', async () => {
     const proc = createFakeProc();
     mockSpawn.mockReturnValue(proc);
 
@@ -143,7 +144,6 @@ describe('ClaudeCLIAdapter', () => {
     await promise;
 
     const args = mockSpawn.mock.calls[0][1];
-    expect(args).not.toContain('--session-id');
     expect(args).not.toContain('--resume');
   });
 
@@ -313,6 +313,72 @@ describe('ClaudeCLIAdapter', () => {
     await expect(
       adapter.runPrompt('nonexistent', 'test')
     ).rejects.toThrow('Role not found: nonexistent');
+  });
+
+  it('adds --mcp-config when mcpConfigPath set and runId+taskId provided', async () => {
+    const adapterWithMcp = new ClaudeCLIAdapter({
+      roleRegistry: registry,
+      workDir: '/tmp/test-workdir',
+      logger,
+      mcpConfigPath: '/tmp/neuroforge-mcp/mcp-config.json',
+    });
+
+    const proc = createFakeProc();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = adapterWithMcp.runPrompt('developer', 'do work', {
+      runId: 'run-42',
+      taskId: 'task-99',
+    });
+
+    proc.stdout.emit('data', Buffer.from(JSON.stringify({ result: 'ok', session_id: 's1' })));
+    proc.emit('close', 0);
+
+    await promise;
+
+    const args = mockSpawn.mock.calls[0][1];
+    expect(args).toContain('--mcp-config');
+    expect(args).toContain('/tmp/neuroforge-mcp/mcp-config.json');
+  });
+
+  it('does not add --mcp-config without mcpConfigPath', async () => {
+    const proc = createFakeProc();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = adapter.runPrompt('developer', 'do work', {
+      runId: 'run-42',
+      taskId: 'task-99',
+    });
+
+    proc.stdout.emit('data', Buffer.from(JSON.stringify({ result: 'ok', session_id: 's1' })));
+    proc.emit('close', 0);
+
+    await promise;
+
+    const args = mockSpawn.mock.calls[0][1];
+    expect(args).not.toContain('--mcp-config');
+  });
+
+  it('does not add --mcp-config without runId/taskId', async () => {
+    const adapterWithMcp = new ClaudeCLIAdapter({
+      roleRegistry: registry,
+      workDir: '/tmp/test-workdir',
+      logger,
+      mcpConfigPath: '/tmp/neuroforge-mcp/mcp-config.json',
+    });
+
+    const proc = createFakeProc();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = adapterWithMcp.runPrompt('developer', 'no run context');
+
+    proc.stdout.emit('data', Buffer.from(JSON.stringify({ result: 'ok', session_id: 's1' })));
+    proc.emit('close', 0);
+
+    await promise;
+
+    const args = mockSpawn.mock.calls[0][1];
+    expect(args).not.toContain('--mcp-config');
   });
 
   it('uses spawn without shell option (security)', async () => {

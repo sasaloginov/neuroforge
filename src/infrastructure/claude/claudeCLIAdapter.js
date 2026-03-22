@@ -5,6 +5,7 @@ import { IChatEngine } from '../../domain/ports/IChatEngine.js';
  * ClaudeCLIAdapter — implements IChatEngine port.
  * Spawns `claude` CLI as a child process for each prompt.
  * Uses --session-id / --resume for conversation continuity.
+ * Uses a single shared MCP config file (HTTP transport) instead of per-run temp files.
  */
 export class ClaudeCLIAdapter extends IChatEngine {
   /**
@@ -13,13 +14,15 @@ export class ClaudeCLIAdapter extends IChatEngine {
    * @param {string} [deps.workDir] - working directory for claude CLI
    * @param {object} [deps.logger] - logger with info/warn/error methods
    * @param {number} [deps.killDelayMs=5000] - delay between SIGTERM and SIGKILL
+   * @param {string|null} [deps.mcpConfigPath] - path to shared MCP config JSON
    */
-  constructor({ roleRegistry, workDir, logger, killDelayMs } = {}) {
+  constructor({ roleRegistry, workDir, logger, killDelayMs, mcpConfigPath } = {}) {
     super();
     this.roleRegistry = roleRegistry;
     this.workDir = workDir || process.cwd();
     this.logger = logger || console;
     this.killDelayMs = killDelayMs ?? 5000;
+    this.mcpConfigPath = mcpConfigPath || null;
   }
 
   /**
@@ -31,7 +34,19 @@ export class ClaudeCLIAdapter extends IChatEngine {
    * @returns {Promise<import('../../domain/ports/IChatEngine.js').RunPromptResult>}
    */
   async runPrompt(roleName, prompt, options = {}) {
-    const { sessionId, signal, timeoutMs } = options;
+    try {
+      return await this.#execCLI(roleName, prompt, options);
+    } catch (err) {
+      if (options.sessionId && err.message?.includes('No conversation found')) {
+        this.logger.warn('[ClaudeCLIAdapter] Session %s not found, retrying without resume', options.sessionId);
+        return this.#execCLI(roleName, prompt, { ...options, sessionId: null });
+      }
+      throw err;
+    }
+  }
+
+  async #execCLI(roleName, prompt, options = {}) {
+    const { sessionId, signal, timeoutMs, runId, taskId } = options;
 
     if (signal && signal.aborted) {
       throw new Error('Aborted');
@@ -40,6 +55,10 @@ export class ClaudeCLIAdapter extends IChatEngine {
     const role = this.roleRegistry.get(roleName);
 
     const args = ['--print', '--output-format', 'json', '--model', role.model];
+
+    if (this.mcpConfigPath && runId && taskId) {
+      args.push('--mcp-config', this.mcpConfigPath);
+    }
 
     if (role.systemPrompt) {
       args.push('--system-prompt', role.systemPrompt);
@@ -50,8 +69,7 @@ export class ClaudeCLIAdapter extends IChatEngine {
     }
 
     if (sessionId) {
-      args.push('--session-id', sessionId);
-      args.push('--resume');
+      args.push('--resume', sessionId);
     }
 
     const effectiveTimeout = timeoutMs || role.timeoutMs;

@@ -16,9 +16,9 @@ describe.skipIf(!DATABASE_URL)('PgTaskRepo (integration)', () => {
     // ensure a project exists for FK
     projectId = crypto.randomUUID();
     await getPool().query(
-      `INSERT INTO projects (id, name, repo_url) VALUES ($1, $2, $3)
+      `INSERT INTO projects (id, name, prefix, repo_url) VALUES ($1, $2, $3, $4)
        ON CONFLICT (id) DO NOTHING`,
-      [projectId, `test-project-${projectId.slice(0, 8)}`, 'https://github.com/test/repo'],
+      [projectId, `test-project-${projectId.slice(0, 8)}`, 'TSTTSK', 'https://github.com/test/repo'],
     );
   });
 
@@ -41,7 +41,7 @@ describe.skipIf(!DATABASE_URL)('PgTaskRepo (integration)', () => {
       callbackMeta: { key: 'value' },
     });
 
-    await repo.save(task);
+    await repo.saveWithSeqNumber(task);
     const found = await repo.findById(task.id);
 
     expect(found).not.toBeNull();
@@ -54,7 +54,7 @@ describe.skipIf(!DATABASE_URL)('PgTaskRepo (integration)', () => {
 
   it('save updates existing task', async () => {
     const task = Task.create({ projectId, title: 'Original' });
-    await repo.save(task);
+    await repo.saveWithSeqNumber(task);
 
     task.title = 'Updated';
     task.transitionTo('in_progress');
@@ -68,8 +68,8 @@ describe.skipIf(!DATABASE_URL)('PgTaskRepo (integration)', () => {
   it('findByProjectId', async () => {
     const t1 = Task.create({ projectId, title: 'T1' });
     const t2 = Task.create({ projectId, title: 'T2' });
-    await repo.save(t1);
-    await repo.save(t2);
+    await repo.saveWithSeqNumber(t1);
+    await repo.saveWithSeqNumber(t2);
 
     const tasks = await repo.findByProjectId(projectId);
     expect(tasks).toHaveLength(2);
@@ -79,8 +79,8 @@ describe.skipIf(!DATABASE_URL)('PgTaskRepo (integration)', () => {
     const t1 = Task.create({ projectId, title: 'T1' });
     const t2 = Task.create({ projectId, title: 'T2' });
     t2.transitionTo('in_progress');
-    await repo.save(t1);
-    await repo.save(t2);
+    await repo.saveWithSeqNumber(t1);
+    await repo.saveWithSeqNumber(t2);
 
     const tasks = await repo.findByProjectId(projectId, { status: 'in_progress' });
     expect(tasks).toHaveLength(1);
@@ -89,7 +89,7 @@ describe.skipIf(!DATABASE_URL)('PgTaskRepo (integration)', () => {
 
   it('delete', async () => {
     const task = Task.create({ projectId, title: 'To Delete' });
-    await repo.save(task);
+    await repo.saveWithSeqNumber(task);
     await repo.delete(task.id);
 
     const found = await repo.findById(task.id);

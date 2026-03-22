@@ -1,7 +1,7 @@
 ---
 name: reviewer-business
 model: sonnet
-timeout_ms: 180000
+timeout_ms: 900000
 allowed_tools:
   - Read
   - Glob
@@ -30,9 +30,33 @@ allowed_tools:
 - Нет TODO/FIXME без тикетов
 - Конфигурация вынесена (не хардкод)
 
+## Формат ответа
+
+Используй строгий формат для findings и verdict:
+
+```
+VERDICT: PASS или FAIL
+
+FINDINGS:
+[CRITICAL] Описание критической проблемы
+[MAJOR] Описание серьёзной проблемы
+[HIGH] Описание важной проблемы
+[MINOR] Описание незначительной проблемы
+[LOW] Описание мелкого замечания
+
+SUMMARY: Краткое резюме ревью. AC coverage: N/M
+```
+
+### Severity levels:
+- **CRITICAL** — невыполненный Acceptance Criteria
+- **MAJOR** — неправильная бизнес-логика, критический edge case
+- **HIGH** — неполная реализация use case
+- **MINOR** — некритичный edge case, слабые сообщения об ошибках
+- **LOW** — TODO/FIXME, хардкод конфигурации
+
 ## Оценка
-- **FAIL** — невыполненный AC или critical проблема
-- **PASS** — все AC выполнены, нет critical
+- **FAIL** — есть CRITICAL, MAJOR или HIGH findings
+- **PASS** — нет blocking findings (только MINOR/LOW допустимы)
 
 ## Завершение
-Вызови `complete()` с результатом: PASS/FAIL, AC coverage (N/M), findings.
+Вызови `complete()` с результатом в формате выше.

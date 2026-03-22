@@ -14,7 +14,7 @@ describe('CreateTask', () => {
 
   beforeEach(() => {
     taskService = {
-      createTask: vi.fn().mockResolvedValue({ id: 'task-1', status: 'pending' }),
+      createTask: vi.fn().mockResolvedValue({ id: 'task-1', status: 'pending', seqNumber: 1 }),
       advanceTask: vi.fn().mockResolvedValue({ id: 'task-1', status: 'in_progress' }),
     };
     runService = {
@@ -24,7 +24,7 @@ describe('CreateTask', () => {
       get: vi.fn().mockReturnValue({ name: 'analyst', timeoutMs: 300000 }),
     };
     projectRepo = {
-      findById: vi.fn().mockResolvedValue({ id: 'proj-1', name: 'test-project' }),
+      findById: vi.fn().mockResolvedValue({ id: 'proj-1', name: 'test-project', prefix: 'TP' }),
     };
     callbackSender = {
       send: vi.fn().mockResolvedValue({ ok: true }),
@@ -42,7 +42,7 @@ describe('CreateTask', () => {
       callbackMeta: { chatId: 123 },
     });
 
-    expect(result).toEqual({ taskId: 'task-1', status: 'in_progress' });
+    expect(result).toEqual({ taskId: 'task-1', shortId: 'TP-1', status: 'in_progress' });
 
     expect(projectRepo.findById).toHaveBeenCalledWith('proj-1');
     expect(roleRegistry.get).toHaveBeenCalledWith('analyst');
@@ -64,7 +64,7 @@ describe('CreateTask', () => {
     expect(taskService.advanceTask).toHaveBeenCalledWith('task-1');
     expect(callbackSender.send).toHaveBeenCalledWith(
       'https://example.com/callback',
-      expect.objectContaining({ type: 'progress', taskId: 'task-1', stage: 'queued' }),
+      expect.objectContaining({ type: 'progress', taskId: 'task-1', shortId: 'TP-1', stage: 'queued' }),
       { chatId: 123 },
     );
   });
@@ -101,7 +101,7 @@ describe('CreateTask', () => {
       title: 'Build feature X',
     });
 
-    expect(result).toEqual({ taskId: 'task-1', status: 'in_progress' });
+    expect(result).toEqual({ taskId: 'task-1', shortId: 'TP-1', status: 'in_progress' });
     expect(callbackSender.send).not.toHaveBeenCalled();
   });
 
@@ -111,7 +111,7 @@ describe('CreateTask', () => {
       title: 'Build feature X',
     });
 
-    expect(result).toEqual({ taskId: 'task-1', status: 'in_progress' });
+    expect(result).toEqual({ taskId: 'task-1', shortId: 'TP-1', status: 'in_progress' });
     expect(taskService.createTask).toHaveBeenCalledWith(
       expect.objectContaining({ description: null }),
     );

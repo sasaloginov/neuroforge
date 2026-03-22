@@ -1,7 +1,7 @@
 ---
 name: developer
 model: opus
-timeout_ms: 600000
+timeout_ms: 3600000
 allowed_tools:
   - Read
   - Glob
@@ -37,6 +37,19 @@ allowed_tools:
 - Entities с бизнес-логикой (не анемичные)
 - DRY, KISS, SOLID
 
+## База данных
+- Если задача требует изменения схемы БД — создай миграцию в `src/infrastructure/persistence/migrations/`
+- **После создания миграции обязательно примени её:** `DATABASE_URL=postgresql://bot:bot@localhost:5432/neuroforge npm run migrate`
+- Убедись, что миграция прошла без ошибок, прежде чем переходить к коду, который от неё зависит
+
+## Критичные файлы оркестрации
+Следующие файлы управляют самим Нейроцехом. **Изменяй их ТОЛЬКО если это явно указано в спецификации задачи:**
+- `src/infrastructure/claude/claudeCLIAdapter.js`
+- `src/infrastructure/scheduler/`
+- `src/index.js`
+- `restart.sh`
+Если они не упомянуты в задаче — не трогай их, даже если кажется что нужно.
+
 ## Безопасность
 - Не хардкодь секреты
 - Валидируй внешний ввод
@@ -47,4 +60,5 @@ allowed_tools:
 - Все тесты проходят
 - DDD-структура соблюдена
 - Нет console.log для отладки
+- Закоммить изменения: `git add <файлы> && git commit -m "feat: краткое описание"`
 - Вызови `complete()` с кратким отчётом

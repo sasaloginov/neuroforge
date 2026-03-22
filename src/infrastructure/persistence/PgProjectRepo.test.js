@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { PgProjectRepo } from './PgProjectRepo.js';
+import { Project } from '../../domain/entities/Project.js';
 import { createPool, closePool, getPool } from './pg.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -23,13 +24,14 @@ describe.skipIf(!DATABASE_URL)('PgProjectRepo (integration)', () => {
   });
 
   it('save + findById', async () => {
-    const project = {
+    const project = new Project({
       id: crypto.randomUUID(),
       name: `${testPrefix}-one`,
+      prefix: 'TSTONE',
       repoUrl: 'https://github.com/test/one',
       workDir: '/tmp/one',
       createdAt: new Date(),
-    };
+    });
     await repo.save(project);
 
     const found = await repo.findById(project.id);
@@ -40,12 +42,13 @@ describe.skipIf(!DATABASE_URL)('PgProjectRepo (integration)', () => {
   });
 
   it('findByName', async () => {
-    const project = {
+    const project = new Project({
       id: crypto.randomUUID(),
       name: `${testPrefix}-named`,
+      prefix: 'TSTNAM',
       repoUrl: 'https://github.com/test/named',
       createdAt: new Date(),
-    };
+    });
     await repo.save(project);
 
     const found = await repo.findByName(project.name);
@@ -54,8 +57,8 @@ describe.skipIf(!DATABASE_URL)('PgProjectRepo (integration)', () => {
   });
 
   it('findAll', async () => {
-    const p1 = { id: crypto.randomUUID(), name: `${testPrefix}-a`, repoUrl: 'https://a', createdAt: new Date() };
-    const p2 = { id: crypto.randomUUID(), name: `${testPrefix}-b`, repoUrl: 'https://b', createdAt: new Date() };
+    const p1 = new Project({ id: crypto.randomUUID(), name: `${testPrefix}-a`, prefix: 'TSTA', repoUrl: 'https://a', createdAt: new Date() });
+    const p2 = new Project({ id: crypto.randomUUID(), name: `${testPrefix}-b`, prefix: 'TSTB', repoUrl: 'https://b', createdAt: new Date() });
     await repo.save(p1);
     await repo.save(p2);
 
@@ -64,12 +67,13 @@ describe.skipIf(!DATABASE_URL)('PgProjectRepo (integration)', () => {
   });
 
   it('save updates existing project', async () => {
-    const project = {
+    const project = new Project({
       id: crypto.randomUUID(),
       name: `${testPrefix}-update`,
+      prefix: 'TSTUPD',
       repoUrl: 'https://original',
       createdAt: new Date(),
-    };
+    });
     await repo.save(project);
 
     project.repoUrl = 'https://updated';

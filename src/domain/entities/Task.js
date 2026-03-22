@@ -4,24 +4,26 @@ const STATUSES = {
   PENDING: 'pending',
   IN_PROGRESS: 'in_progress',
   WAITING_REPLY: 'waiting_reply',
+  NEEDS_ESCALATION: 'needs_escalation',
   DONE: 'done',
   FAILED: 'failed',
   CANCELLED: 'cancelled',
 };
 
 const TRANSITIONS = {
-  [STATUSES.PENDING]:       [STATUSES.IN_PROGRESS, STATUSES.CANCELLED],
-  [STATUSES.IN_PROGRESS]:   [STATUSES.WAITING_REPLY, STATUSES.DONE, STATUSES.FAILED, STATUSES.CANCELLED],
-  [STATUSES.WAITING_REPLY]: [STATUSES.IN_PROGRESS, STATUSES.CANCELLED],
-  [STATUSES.DONE]:          [],
-  [STATUSES.FAILED]:        [],
-  [STATUSES.CANCELLED]:     [],
+  [STATUSES.PENDING]:          [STATUSES.IN_PROGRESS, STATUSES.CANCELLED],
+  [STATUSES.IN_PROGRESS]:      [STATUSES.WAITING_REPLY, STATUSES.NEEDS_ESCALATION, STATUSES.DONE, STATUSES.FAILED, STATUSES.CANCELLED],
+  [STATUSES.WAITING_REPLY]:    [STATUSES.IN_PROGRESS, STATUSES.CANCELLED],
+  [STATUSES.NEEDS_ESCALATION]: [STATUSES.IN_PROGRESS, STATUSES.CANCELLED],
+  [STATUSES.DONE]:             [],
+  [STATUSES.FAILED]:           [STATUSES.IN_PROGRESS],
+  [STATUSES.CANCELLED]:        [],
 };
 
 export class Task {
   static STATUSES = STATUSES;
 
-  constructor({ id, projectId, title, description, status, callbackUrl, callbackMeta, revisionCount, createdAt, updatedAt }) {
+  constructor({ id, projectId, title, description, status, callbackUrl, callbackMeta, revisionCount, seqNumber, projectPrefix, createdAt, updatedAt }) {
     this.id = id;
     this.projectId = projectId;
     this.title = title;
@@ -30,11 +32,20 @@ export class Task {
     this.callbackUrl = callbackUrl ?? null;
     this.callbackMeta = callbackMeta ?? null;
     this.revisionCount = revisionCount ?? 0;
+    this.seqNumber = seqNumber ?? null;
+    this.projectPrefix = projectPrefix ?? null;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
   }
 
-  static create({ projectId, title, description, callbackUrl, callbackMeta }) {
+  get shortId() {
+    if (this.projectPrefix && this.seqNumber != null) {
+      return `${this.projectPrefix}-${this.seqNumber}`;
+    }
+    return null;
+  }
+
+  static create({ projectId, title, description, callbackUrl, callbackMeta, seqNumber }) {
     const now = new Date();
     return new Task({
       id: crypto.randomUUID(),
@@ -45,6 +56,7 @@ export class Task {
       callbackUrl,
       callbackMeta,
       revisionCount: 0,
+      seqNumber: seqNumber ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -77,6 +89,8 @@ export class Task {
       callbackUrl: row.callback_url,
       callbackMeta: row.callback_meta,
       revisionCount: row.revision_count,
+      seqNumber: row.seq_number ?? null,
+      projectPrefix: row.project_prefix ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });
@@ -92,6 +106,7 @@ export class Task {
       callback_url: this.callbackUrl,
       callback_meta: this.callbackMeta,
       revision_count: this.revisionCount,
+      seq_number: this.seqNumber,
       created_at: this.createdAt,
       updated_at: this.updatedAt,
     };

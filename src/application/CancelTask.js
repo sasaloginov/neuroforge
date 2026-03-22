@@ -1,11 +1,13 @@
 export class CancelTask {
   #taskService;
   #runRepo;
+  #projectRepo;
   #callbackSender;
 
-  constructor({ taskService, runRepo, callbackSender }) {
+  constructor({ taskService, runRepo, projectRepo, callbackSender }) {
     this.#taskService = taskService;
     this.#runRepo = runRepo;
+    this.#projectRepo = projectRepo;
     this.#callbackSender = callbackSender;
   }
 
@@ -24,14 +26,19 @@ export class CancelTask {
     // Cancel the task (throws InvalidTransitionError if already terminal)
     await this.#taskService.cancelTask(taskId);
 
+    const project = await this.#projectRepo.findById(task.projectId);
+    const shortId = project?.prefix && task.seqNumber != null
+      ? `${project.prefix}-${task.seqNumber}`
+      : undefined;
+
     if (task.callbackUrl) {
       await this.#callbackSender.send(
         task.callbackUrl,
-        { type: 'failed', taskId, error: 'Task cancelled by user' },
+        { type: 'failed', taskId, shortId, error: 'Task cancelled by user' },
         task.callbackMeta,
       );
     }
 
-    return { taskId, status: 'cancelled', cancelledRuns: queuedRuns.length };
+    return { taskId, shortId, status: 'cancelled', cancelledRuns: queuedRuns.length };
   }
 }

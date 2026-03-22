@@ -166,3 +166,156 @@ describe('projectRoutes — additional coverage', () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+// ─── prefix & shortId coverage ────────────────────────────────────────────
+
+describe('projectRoutes — prefix and shortId coverage', () => {
+  let app;
+
+  afterEach(async () => {
+    if (app) await app.close();
+  });
+
+  it('POST /projects returns 400 when prefix is missing', async () => {
+    const { app: a } = setup();
+    app = a;
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/projects',
+      headers: authHeader(),
+      payload: { name: 'no-prefix-project', repoUrl: 'https://github.com/org/nope' },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('GET /projects returns prefix in project list', async () => {
+    const projectWithPrefix = new Project({
+      id: PROJECT_ID,
+      name: 'my-project',
+      prefix: 'MYP',
+      repoUrl: 'https://github.com/org/repo',
+      workDir: '/work',
+      createdAt: new Date('2025-01-01'),
+    });
+    const { app: a } = setup({
+      projectRepo: { findAll: vi.fn().mockResolvedValue([projectWithPrefix]) },
+    });
+    app = a;
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/projects',
+      headers: authHeader(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().projects[0].prefix).toBe('MYP');
+  });
+
+  it('GET /projects/:name returns prefix in response', async () => {
+    const projectWithPrefix = new Project({
+      id: PROJECT_ID,
+      name: 'my-project',
+      prefix: 'MYP',
+      repoUrl: 'https://github.com/org/repo',
+      workDir: '/work',
+      createdAt: new Date('2025-01-01'),
+    });
+    const { app: a } = setup({
+      projectRepo: { findByName: vi.fn().mockResolvedValue(projectWithPrefix) },
+    });
+    app = a;
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/projects/my-project',
+      headers: authHeader(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().prefix).toBe('MYP');
+  });
+
+  it('GET /projects/:name/tasks includes shortId when seqNumber is set', async () => {
+    const projectWithPrefix = new Project({
+      id: PROJECT_ID,
+      name: 'my-project',
+      prefix: 'MYP',
+      repoUrl: 'https://github.com/org/repo',
+      workDir: '/work',
+      createdAt: new Date('2025-01-01'),
+    });
+    const { app: a } = setup({
+      projectRepo: {
+        findByName: vi.fn().mockResolvedValue(projectWithPrefix),
+      },
+      taskRepo: {
+        findByProjectId: vi.fn().mockResolvedValue([
+          {
+            id: '00000000-0000-0000-0000-000000000200',
+            title: 'My Task',
+            status: 'in_progress',
+            seqNumber: 5,
+            createdAt: new Date('2025-01-01'),
+            updatedAt: new Date('2025-01-01'),
+          },
+        ]),
+      },
+    });
+    app = a;
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/projects/my-project/tasks',
+      headers: authHeader(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().tasks[0].shortId).toBe('MYP-5');
+  });
+
+  it('GET /projects/:name/tasks returns undefined shortId when seqNumber is null', async () => {
+    const projectWithPrefix = new Project({
+      id: PROJECT_ID,
+      name: 'my-project',
+      prefix: 'MYP',
+      repoUrl: 'https://github.com/org/repo',
+      workDir: '/work',
+      createdAt: new Date('2025-01-01'),
+    });
+    const { app: a } = setup({
+      projectRepo: {
+        findByName: vi.fn().mockResolvedValue(projectWithPrefix),
+      },
+      taskRepo: {
+        findByProjectId: vi.fn().mockResolvedValue([
+          {
+            id: '00000000-0000-0000-0000-000000000200',
+            title: 'No SeqNum Task',
+            status: 'pending',
+            seqNumber: null,
+            createdAt: new Date('2025-01-01'),
+            updatedAt: new Date('2025-01-01'),
+          },
+        ]),
+      },
+    });
+    app = a;
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/projects/my-project/tasks',
+      headers: authHeader(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().tasks[0].shortId).toBeUndefined();
+  });
+});

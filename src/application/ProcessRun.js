@@ -1,4 +1,3 @@
-import { Session } from '../domain/entities/Session.js';
 import { RunTimeoutError } from '../domain/errors/RunTimeoutError.js';
 
 export class ProcessRun {
@@ -34,17 +33,19 @@ export class ProcessRun {
       const task = run.taskId ? await this.#taskRepo.findById(run.taskId) : null;
       const projectId = task ? task.projectId : run.taskId;
 
-      // Find or create session record
-      let session = await this.#sessionRepo.findByProjectAndRole(projectId, run.roleName);
-      if (!session) {
-        session = Session.create({ projectId, roleName: run.roleName, cliSessionId: null });
-        await this.#sessionRepo.save(session);
-      }
+      // Find or create session record (atomic upsert)
+      const session = await this.#sessionRepo.findOrCreate(projectId, run.roleName);
 
-      // Only pass sessionId for continuation if explicitly set on the run
+      // Bind session to run before executing
+      run.sessionId = session.id;
+      await this.#runRepo.save(run);
+
+      // Pass CLI session id for continuation
       result = await this.#chatEngine.runPrompt(run.roleName, run.prompt, {
-        sessionId: run.sessionId || null,
+        sessionId: session.cliSessionId || null,
         timeoutMs: role.timeoutMs,
+        runId: run.id,
+        taskId: run.taskId,
       });
 
       // Update session's cliSessionId if returned
@@ -59,7 +60,7 @@ export class ProcessRun {
       if (run.callbackUrl) {
         await this.#callbackSender.send(
           run.callbackUrl,
-          { type: 'progress', taskId: run.taskId, stage: run.roleName, message: 'Шаг завершен' },
+          { type: 'progress', taskId: run.taskId, shortId: task?.shortId ?? null, stage: run.roleName, message: 'Шаг завершен' },
           run.callbackMeta,
         );
       }
@@ -73,10 +74,12 @@ export class ProcessRun {
       if (run.callbackUrl) {
         await this.#callbackSender.send(
           run.callbackUrl,
-          { type: 'failed', taskId: run.taskId, error: error.message },
+          { type: 'failed', taskId: run.taskId, shortId: task?.shortId ?? null, error: error.message },
           run.callbackMeta,
         );
       }
+
+      return { run, result: null };
     }
 
     return { run, result };
