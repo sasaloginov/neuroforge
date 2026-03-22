@@ -92,11 +92,11 @@ export class PgTaskRepo extends ITaskRepo {
 
       const r = task.toRow();
       await client.query(
-        `INSERT INTO tasks (id, project_id, title, description, status, callback_url, callback_meta, revision_count, seq_number, branch_name, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        `INSERT INTO tasks (id, project_id, title, description, status, callback_url, callback_meta, revision_count, seq_number, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
         [r.id, r.project_id, r.title, r.description, r.status, r.callback_url,
          r.callback_meta ? JSON.stringify(r.callback_meta) : null,
-         r.revision_count, r.seq_number, r.branch_name, r.created_at, r.updated_at],
+         r.revision_count, r.seq_number, r.created_at, r.updated_at],
       );
 
       await client.query('COMMIT');
@@ -113,8 +113,8 @@ export class PgTaskRepo extends ITaskRepo {
   async save(task) {
     const r = task.toRow();
     await this._getPool().query(
-      `INSERT INTO tasks (id, project_id, title, description, status, callback_url, callback_meta, revision_count, seq_number, branch_name, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      `INSERT INTO tasks (id, project_id, title, description, status, callback_url, callback_meta, revision_count, seq_number, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        ON CONFLICT (id) DO UPDATE SET
          project_id = EXCLUDED.project_id,
          title = EXCLUDED.title,
@@ -124,45 +124,11 @@ export class PgTaskRepo extends ITaskRepo {
          callback_meta = EXCLUDED.callback_meta,
          revision_count = EXCLUDED.revision_count,
          seq_number = EXCLUDED.seq_number,
-         branch_name = EXCLUDED.branch_name,
          updated_at = EXCLUDED.updated_at`,
       [r.id, r.project_id, r.title, r.description, r.status, r.callback_url,
        r.callback_meta ? JSON.stringify(r.callback_meta) : null,
-       r.revision_count, r.seq_number, r.branch_name, r.created_at, r.updated_at],
+       r.revision_count, r.seq_number, r.created_at, r.updated_at],
     );
-  }
-
-  /** Check if project has any task in active statuses (in_progress, waiting_reply, needs_escalation). */
-  async hasActiveTask(projectId) {
-    const { rows } = await this._getPool().query(
-      `SELECT 1 FROM tasks
-       WHERE project_id = $1 AND status IN ('in_progress', 'waiting_reply', 'needs_escalation')
-       LIMIT 1`,
-      [projectId],
-    );
-    return rows.length > 0;
-  }
-
-  /** Find the oldest pending task for a project (FIFO). */
-  async findOldestPending(projectId) {
-    const { rows } = await this._getPool().query(
-      `SELECT t.*, p.prefix AS project_prefix
-       FROM tasks t
-       LEFT JOIN projects p ON p.id = t.project_id
-       WHERE t.project_id = $1 AND t.status = 'pending'
-       ORDER BY t.created_at ASC
-       LIMIT 1`,
-      [projectId],
-    );
-    return rows.length ? Task.fromRow(rows[0]) : null;
-  }
-
-  /** Find all distinct project IDs that have pending tasks. */
-  async findProjectsWithPendingTasks() {
-    const { rows } = await this._getPool().query(
-      `SELECT DISTINCT project_id FROM tasks WHERE status = 'pending'`,
-    );
-    return rows.map(r => r.project_id);
   }
 
   async delete(id) {

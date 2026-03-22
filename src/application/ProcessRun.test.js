@@ -7,7 +7,6 @@ describe('ProcessRun', () => {
   let runRepo;
   let runService;
   let taskRepo;
-  let projectRepo;
   let chatEngine;
   let sessionRepo;
   let roleRegistry;
@@ -36,10 +35,7 @@ describe('ProcessRun', () => {
       timeout: vi.fn().mockResolvedValue(undefined),
     };
     taskRepo = {
-      findById: vi.fn().mockResolvedValue({ id: 'task-1', projectId: 'project-1', branchName: null }),
-    };
-    projectRepo = {
-      findById: vi.fn().mockResolvedValue({ id: 'project-1', workDir: null }),
+      findById: vi.fn().mockResolvedValue({ id: 'task-1', projectId: 'project-1' }),
     };
     chatEngine = {
       runPrompt: vi.fn().mockResolvedValue({ response: 'Analysis result', sessionId: 'cli-session-1' }),
@@ -59,7 +55,7 @@ describe('ProcessRun', () => {
       send: vi.fn().mockResolvedValue({ ok: true }),
     };
 
-    processRun = new ProcessRun({ runRepo, runService, taskRepo, projectRepo, chatEngine, sessionRepo, roleRegistry, callbackSender });
+    processRun = new ProcessRun({ runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender });
   });
 
   it('full lifecycle: takes run, executes, completes, sends callback', async () => {
@@ -76,7 +72,6 @@ describe('ProcessRun', () => {
       timeoutMs: 300000,
       runId: 'run-1',
       taskId: 'task-1',
-      workDir: null,
     });
     expect(runService.complete).toHaveBeenCalledWith('run-1', 'Analysis result');
     expect(callbackSender.send).toHaveBeenCalledWith(

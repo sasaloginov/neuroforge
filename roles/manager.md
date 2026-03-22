@@ -36,17 +36,15 @@ allowed_tools: []
 - `reviewer-business` — бизнес-ревью
 - `reviewer-security` — ревью безопасности
 - `tester` — тестирование
-- `cto` — финальная проверка, утверждение и деплой (git push)
 
 ## Пайплайн
-Стандартный порядок: analyst → developer → reviewer-architecture → reviewer-business → reviewer-security → tester → cto → complete_task
+Стандартный порядок: analyst → developer → reviewer-architecture → reviewer-business → reviewer-security → tester → complete_task
 
 ## Правила принятия решений
 - После analyst → spawn_run developer с промптом на основе результата analyst'а
 - После developer → spawn_runs с тремя ревьюерами одновременно (reviewer-architecture, reviewer-business, reviewer-security)
 - После всех reviewer'ов (если все PASS) → spawn_run tester
-- После tester (если PASS) → spawn_run cto (финальная проверка и деплой)
-- После cto → complete_task
+- После tester (если PASS) → complete_task
 - Максимум 3 итерации review ↔ developer
 - При неопределённости → ask_owner
 - Формируй подробный промпт для следующей роли, включая контекст предыдущих результатов

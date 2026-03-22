@@ -1,21 +1,18 @@
-import { execSync } from 'node:child_process';
 import { RunTimeoutError } from '../domain/errors/RunTimeoutError.js';
 
 export class ProcessRun {
   #runRepo;
   #runService;
   #taskRepo;
-  #projectRepo;
   #chatEngine;
   #sessionRepo;
   #roleRegistry;
   #callbackSender;
 
-  constructor({ runRepo, runService, taskRepo, projectRepo, chatEngine, sessionRepo, roleRegistry, callbackSender }) {
+  constructor({ runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender }) {
     this.#runRepo = runRepo;
     this.#runService = runService;
     this.#taskRepo = taskRepo;
-    this.#projectRepo = projectRepo;
     this.#chatEngine = chatEngine;
     this.#sessionRepo = sessionRepo;
     this.#roleRegistry = roleRegistry;
@@ -28,22 +25,13 @@ export class ProcessRun {
     if (!run) return null;
 
     let result = null;
-    let task = null;
 
     try {
       const role = this.#roleRegistry.get(run.roleName);
 
-      // Resolve projectId and workDir from task/project
-      task = run.taskId ? await this.#taskRepo.findById(run.taskId) : null;
+      // Resolve projectId from task
+      const task = run.taskId ? await this.#taskRepo.findById(run.taskId) : null;
       const projectId = task ? task.projectId : run.taskId;
-
-      const project = projectId ? await this.#projectRepo.findById(projectId) : null;
-      const workDir = project?.workDir || null;
-
-      // Checkout task branch before running agent
-      if (task?.branchName && workDir) {
-        this.#checkoutBranch(task.branchName, workDir, run.roleName);
-      }
 
       // Find or create session record (atomic upsert)
       const session = await this.#sessionRepo.findOrCreate(projectId, run.roleName);
@@ -58,7 +46,6 @@ export class ProcessRun {
         timeoutMs: role.timeoutMs,
         runId: run.id,
         taskId: run.taskId,
-        workDir,
       });
 
       // Update session's cliSessionId if returned
@@ -96,27 +83,5 @@ export class ProcessRun {
     }
 
     return { run, result };
-  }
-
-  /** Checkout the task branch in the project's workDir. */
-  #checkoutBranch(branchName, workDir, roleName) {
-    try {
-      // Check if branch exists locally
-      try {
-        execSync(`git rev-parse --verify ${branchName}`, { cwd: workDir, stdio: 'pipe' });
-        // Branch exists — just checkout
-        execSync(`git checkout ${branchName}`, { cwd: workDir, stdio: 'pipe' });
-      } catch {
-        // Branch doesn't exist — analyst creates it from main
-        if (roleName === 'analyst') {
-          execSync(`git checkout -b ${branchName}`, { cwd: workDir, stdio: 'pipe' });
-        } else {
-          // For other roles, branch should already exist
-          throw new Error(`Branch ${branchName} does not exist`);
-        }
-      }
-    } catch (err) {
-      throw new Error(`Git checkout failed for branch ${branchName}: ${err.message}`);
-    }
   }
 }

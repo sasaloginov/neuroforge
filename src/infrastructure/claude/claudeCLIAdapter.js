@@ -46,7 +46,7 @@ export class ClaudeCLIAdapter extends IChatEngine {
   }
 
   async #execCLI(roleName, prompt, options = {}) {
-    const { sessionId, signal, timeoutMs, runId, taskId, workDir } = options;
+    const { sessionId, signal, timeoutMs, runId, taskId } = options;
 
     if (signal && signal.aborted) {
       throw new Error('Aborted');
@@ -97,7 +97,7 @@ export class ClaudeCLIAdapter extends IChatEngine {
       };
 
       const proc = spawn('claude', args, {
-        cwd: workDir || this.workDir,
+        cwd: this.workDir,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {
           HOME: process.env.HOME,

@@ -8,9 +8,6 @@
  * @method save(task) → void
  * @method saveWithSeqNumber(task) → Task  — atomically assigns next seq_number and inserts (mutates task.seqNumber)
  * @method delete(id) → void
- * @method hasActiveTask(projectId) → boolean
- * @method findOldestPending(projectId) → Task | null
- * @method findProjectsWithPendingTasks() → string[]
  */
 export class ITaskRepo {
   async findById(_id) { throw new Error('Not implemented'); }
@@ -19,7 +16,4 @@ export class ITaskRepo {
   async save(_task) { throw new Error('Not implemented'); }
   async saveWithSeqNumber(_task) { throw new Error('Not implemented'); }
   async delete(_id) { throw new Error('Not implemented'); }
-  async hasActiveTask(_projectId) { throw new Error('Not implemented'); }
-  async findOldestPending(_projectId) { throw new Error('Not implemented'); }
-  async findProjectsWithPendingTasks() { throw new Error('Not implemented'); }
 }
