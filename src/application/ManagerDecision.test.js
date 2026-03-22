@@ -526,6 +526,7 @@ describe('buildManagerPrompt', () => {
       description: 'REST endpoints',
       status: 'in_progress',
       revisionCount: 1,
+      branchName: 'TP-1/build-api',
     };
     const runs = [
       { roleName: 'analyst', status: 'done', response: 'Analysis done', error: null, createdAt: new Date('2026-01-01') },
@@ -536,6 +537,7 @@ describe('buildManagerPrompt', () => {
 
     expect(prompt).toContain('Build API');
     expect(prompt).toContain('REST endpoints');
+    expect(prompt).toContain('Ветка: TP-1/build-api');
     expect(prompt).toContain('[analyst] status=done');
     expect(prompt).toContain('Analysis done');
     expect(prompt).toContain('[developer] status=failed');
@@ -547,6 +549,12 @@ describe('buildManagerPrompt', () => {
     const task = { title: 'T', description: 'd', status: 'in_progress', revisionCount: 0 };
     const prompt = buildManagerPrompt(task, []);
     expect(prompt).toContain('spawn_runs');
+  });
+
+  it('shows "не назначена" when branchName is null', () => {
+    const task = { title: 'T', description: 'd', status: 'in_progress', revisionCount: 0, branchName: null };
+    const prompt = buildManagerPrompt(task, []);
+    expect(prompt).toContain('Ветка: не назначена');
   });
 });
 

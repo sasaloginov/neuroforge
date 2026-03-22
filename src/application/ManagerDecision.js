@@ -381,6 +381,7 @@ function buildManagerPrompt(task, runs) {
 
   return `Задача: ${task.title}
 Описание: ${task.description ?? 'нет'}
+Ветка: ${task.branchName ?? 'не назначена'}
 Текущий статус: ${task.status}
 Количество ревизий: ${task.revisionCount}
 

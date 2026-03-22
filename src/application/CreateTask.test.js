@@ -29,7 +29,7 @@ describe('CreateTask', () => {
       findById: vi.fn().mockResolvedValue({ id: 'proj-1', name: 'test-project', prefix: 'TP' }),
     };
     taskRepo = {
-      hasActiveTask: vi.fn().mockResolvedValue(false),
+      activateIfNoActive: vi.fn().mockResolvedValue(true),
     };
     callbackSender = {
       send: vi.fn().mockResolvedValue({ ok: true }),
@@ -53,11 +53,11 @@ describe('CreateTask', () => {
     expect(result.status).toBe('in_progress');
 
     expect(taskService.updateBranchName).toHaveBeenCalledWith('task-1', expect.stringContaining('TP-1/'));
+    expect(taskRepo.activateIfNoActive).toHaveBeenCalledWith('task-1', 'proj-1');
     expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       taskId: 'task-1',
       roleName: 'analyst',
     }));
-    expect(taskService.advanceTask).toHaveBeenCalledWith('task-1');
     expect(callbackSender.send).toHaveBeenCalledWith(
       'https://example.com/callback',
       expect.objectContaining({ type: 'progress', taskId: 'task-1', stage: 'queued' }),
@@ -65,8 +65,8 @@ describe('CreateTask', () => {
     );
   });
 
-  it('queues task when project has active task', async () => {
-    taskRepo.hasActiveTask.mockResolvedValue(true);
+  it('queues task when activateIfNoActive returns false (active task exists)', async () => {
+    taskRepo.activateIfNoActive.mockResolvedValue(false);
 
     const result = await createTask.execute({
       projectId: 'proj-1',
@@ -77,7 +77,6 @@ describe('CreateTask', () => {
 
     expect(result.status).toBe('pending');
     expect(runService.enqueue).not.toHaveBeenCalled();
-    expect(taskService.advanceTask).not.toHaveBeenCalled();
     expect(callbackSender.send).toHaveBeenCalledWith(
       'https://example.com/cb',
       expect.objectContaining({ type: 'queued', stage: 'pending' }),
@@ -98,8 +97,7 @@ describe('CreateTask', () => {
 
     expect(result.status).toBe('backlog');
     expect(runService.enqueue).not.toHaveBeenCalled();
-    expect(taskService.advanceTask).not.toHaveBeenCalled();
-    expect(taskRepo.hasActiveTask).not.toHaveBeenCalled();
+    expect(taskRepo.activateIfNoActive).not.toHaveBeenCalled();
     expect(callbackSender.send).toHaveBeenCalledWith(
       'https://example.com/cb',
       expect.objectContaining({ type: 'progress', stage: 'backlog' }),

@@ -61,10 +61,12 @@ export class CreateTask {
       return { taskId: task.id, shortId, branchName: task.branchName, status: 'backlog' };
     }
 
-    // Check if project already has an active task
-    const hasActive = await this.#taskRepo.hasActiveTask(projectId);
-    if (hasActive) {
-      // Leave as pending (queued)
+    // Atomic: activate this task only if no other active task exists for the project.
+    // Eliminates the TOCTOU race between hasActiveTask check and advanceTask.
+    const activated = await this.#taskRepo.activateIfNoActive(task.id, projectId);
+
+    if (!activated) {
+      // Leave as pending (queued) — another task is already active
       if (callbackUrl) {
         await this.#callbackSender.send(
           callbackUrl,
@@ -75,7 +77,7 @@ export class CreateTask {
       return { taskId: task.id, shortId, branchName: task.branchName, status: 'pending' };
     }
 
-    // No active task — start immediately
+    // Activated — enqueue analyst
     const prompt = `Задача: ${task.shortId ?? ''} ${title}\n\n${description ?? ''}\n\nПроанализируй задачу и создай спецификацию.`;
 
     await this.#runService.enqueue({
@@ -86,8 +88,6 @@ export class CreateTask {
       callbackUrl,
       callbackMeta,
     });
-
-    await this.#taskService.advanceTask(task.id);
 
     if (callbackUrl) {
       await this.#callbackSender.send(

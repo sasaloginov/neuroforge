@@ -170,4 +170,60 @@ export class PgTaskRepo extends ITaskRepo {
     );
     return rows.length ? Task.fromRow(rows[0]) : null;
   }
+
+  /**
+   * Atomically activate the oldest pending task for a project,
+   * but ONLY if no active task exists. Uses a single CTE to avoid TOCTOU race.
+   *
+   * @param {string} projectId
+   * @returns {Task|null} — activated task or null if slot is occupied / no pending tasks
+   */
+  async activateOldestPending(projectId) {
+    const { rows } = await this._getPool().query(
+      `WITH candidate AS (
+        SELECT t.id FROM tasks t
+        WHERE t.project_id = $1
+          AND t.status = 'pending'
+          AND NOT EXISTS (
+            SELECT 1 FROM tasks t2
+            WHERE t2.project_id = $1
+              AND t2.status IN ('in_progress', 'waiting_reply', 'needs_escalation')
+          )
+        ORDER BY t.created_at ASC
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE tasks SET status = 'in_progress', updated_at = NOW()
+      FROM candidate
+      WHERE tasks.id = candidate.id
+      RETURNING tasks.*,
+        (SELECT p.prefix FROM projects p WHERE p.id = tasks.project_id) AS project_prefix`,
+      [projectId],
+    );
+    return rows.length ? Task.fromRow(rows[0]) : null;
+  }
+
+  /**
+   * Atomically activate a specific task (pending → in_progress),
+   * but ONLY if no other active task exists for the same project.
+   *
+   * @param {string} taskId
+   * @param {string} projectId
+   * @returns {boolean} — true if activated, false if slot is occupied
+   */
+  async activateIfNoActive(taskId, projectId) {
+    const { rowCount } = await this._getPool().query(
+      `UPDATE tasks SET status = 'in_progress', updated_at = NOW()
+       WHERE id = $1
+         AND project_id = $2
+         AND status = 'pending'
+         AND NOT EXISTS (
+           SELECT 1 FROM tasks t2
+           WHERE t2.project_id = $2
+             AND t2.status IN ('in_progress', 'waiting_reply', 'needs_escalation')
+         )`,
+      [taskId, projectId],
+    );
+    return rowCount > 0;
+  }
 }

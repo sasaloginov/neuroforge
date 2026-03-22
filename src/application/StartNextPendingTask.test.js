@@ -12,7 +12,7 @@ describe('StartNextPendingTask', () => {
     id: 'task-1',
     title: 'Build feature X',
     description: 'REST API',
-    status: 'pending',
+    status: 'in_progress', // already activated by atomic method
     callbackUrl: 'https://example.com/cb',
     callbackMeta: { chatId: 1 },
     ...overrides,
@@ -20,8 +20,7 @@ describe('StartNextPendingTask', () => {
 
   beforeEach(() => {
     taskRepo = {
-      hasActiveTask: vi.fn().mockResolvedValue(false),
-      findOldestPending: vi.fn().mockResolvedValue(makeTask()),
+      activateOldestPending: vi.fn().mockResolvedValue(makeTask()),
     };
     taskService = {
       advanceTask: vi.fn().mockResolvedValue(undefined),
@@ -36,43 +35,40 @@ describe('StartNextPendingTask', () => {
     startNext = new StartNextPendingTask({ taskRepo, taskService, runService, roleRegistry });
   });
 
-  it('starts oldest pending task when no active tasks', async () => {
+  it('atomically activates oldest pending task and enqueues analyst', async () => {
     const result = await startNext.execute({ projectId: 'proj-1' });
 
     expect(result).toEqual({ started: true, taskId: 'task-1' });
-    expect(taskRepo.hasActiveTask).toHaveBeenCalledWith('proj-1');
-    expect(taskRepo.findOldestPending).toHaveBeenCalledWith('proj-1');
+    expect(taskRepo.activateOldestPending).toHaveBeenCalledWith('proj-1');
     expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       taskId: 'task-1',
       roleName: 'analyst',
     }));
-    expect(taskService.advanceTask).toHaveBeenCalledWith('task-1');
   });
 
-  it('no-op when active task exists', async () => {
-    taskRepo.hasActiveTask.mockResolvedValue(true);
+  it('no-op when activateOldestPending returns null (active exists or no pending)', async () => {
+    taskRepo.activateOldestPending.mockResolvedValue(null);
 
     const result = await startNext.execute({ projectId: 'proj-1' });
 
-    expect(result).toEqual({ started: false, reason: 'active_task_exists' });
-    expect(taskRepo.findOldestPending).not.toHaveBeenCalled();
-    expect(runService.enqueue).not.toHaveBeenCalled();
-  });
-
-  it('no-op when no pending tasks', async () => {
-    taskRepo.findOldestPending.mockResolvedValue(null);
-
-    const result = await startNext.execute({ projectId: 'proj-1' });
-
-    expect(result).toEqual({ started: false, reason: 'no_pending_tasks' });
+    expect(result).toEqual({ started: false, reason: 'no_eligible_task' });
     expect(runService.enqueue).not.toHaveBeenCalled();
   });
 
   it('includes task description in analyst prompt', async () => {
-    const result = await startNext.execute({ projectId: 'proj-1' });
+    await startNext.execute({ projectId: 'proj-1' });
 
     const prompt = runService.enqueue.mock.calls[0][0].prompt;
     expect(prompt).toContain('Build feature X');
     expect(prompt).toContain('REST API');
+  });
+
+  it('passes callback info from task to enqueued run', async () => {
+    await startNext.execute({ projectId: 'proj-1' });
+
+    expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      callbackUrl: 'https://example.com/cb',
+      callbackMeta: { chatId: 1 },
+    }));
   });
 });
