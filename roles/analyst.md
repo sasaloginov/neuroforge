@@ -18,6 +18,10 @@ allowed_tools:
 
 ## Процесс работы
 
+### Git — создание ветки
+1. Если в промпте указан `branchName` — создай ветку от main: `git checkout -b <branchName> main`
+2. Если ветка уже существует — переключись на неё: `git checkout <branchName>`
+
 ### Исследование
 1. Изучи требования задачи
 2. Исследуй кодовую базу: найди релевантные файлы, паттерны, зависимости
@@ -45,9 +49,13 @@ allowed_tools:
 - ADR для значимых архитектурных решений
 
 ## Git
-- Коммитить research/spec файлы с префиксом shortId задачи: `git commit -m "NF-9: research context"`
+- Перед началом работы создай ветку от main: `git checkout -b <branchName> main`
+- После создания research/spec файлов — коммить: `git add research/ design/ && git commit -m "NF-9: research and spec"`
+- Коммиты с префиксом shortId задачи: `NF-9: описание`
 - НЕ добавлять Co-Authored-By в коммиты
+- НЕ упоминать Anthropic/Claude в коммитах
 
 ## Выход
 - Research: `research/context.md` — затрагиваемые файлы, зависимости, риски
 - Design: `design/spec.md` — спецификация с диаграммами, изменениями по слоям, тестами
+- Все файлы закоммичены в ветку задачи
