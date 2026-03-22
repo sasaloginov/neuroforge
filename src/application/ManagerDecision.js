@@ -277,12 +277,20 @@ export class ManagerDecision {
     if (lastAnalystRun.status !== 'done') return null;
 
     // Analyst succeeded → complete task with analyst's response
-    const result = lastAnalystRun.response ?? '';
+    const fullResult = lastAnalystRun.response ?? '';
 
     // Telegram message limit is 4096 chars. If result exceeds it,
     // signal the bot to send as a .md file instead of inline message.
     const TELEGRAM_MESSAGE_LIMIT = 4096;
-    const resultFormat = result.length > TELEGRAM_MESSAGE_LIMIT ? 'file' : 'message';
+    const resultFormat = fullResult.length > TELEGRAM_MESSAGE_LIMIT ? 'file' : 'message';
+
+    // Cap callback payload to prevent unbounded HTTP body.
+    // 50 KB is generous for any research report while keeping callbacks safe.
+    const MAX_CALLBACK_RESULT_BYTES = 50 * 1024;
+    const truncated = fullResult.length > MAX_CALLBACK_RESULT_BYTES;
+    const result = truncated
+      ? fullResult.slice(0, MAX_CALLBACK_RESULT_BYTES) + '\n\n…[truncated]'
+      : fullResult;
 
     await this.#taskService.completeTask(task.id);
 
@@ -297,6 +305,7 @@ export class ManagerDecision {
           summary: 'Исследование завершено',
           result,
           resultFormat,
+          truncated,
         },
         task.callbackMeta,
       );
@@ -306,7 +315,7 @@ export class ManagerDecision {
 
     return {
       action: 'complete_task',
-      details: { mode: 'research', resultLength: result.length, resultFormat },
+      details: { mode: 'research', resultLength: fullResult.length, resultFormat, truncated },
     };
   }
 

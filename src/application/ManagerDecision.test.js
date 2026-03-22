@@ -938,6 +938,7 @@ describe('ManagerDecision — research mode', () => {
         summary: 'Исследование завершено',
         taskId: 'task-1',
         shortId: 'NF-15',
+        truncated: false,
       }),
       { chatId: 1 },
     );
@@ -953,10 +954,12 @@ describe('ManagerDecision — research mode', () => {
     const result = await managerDecision.execute({ completedRunId: 'run-analyst' });
 
     expect(result.details.resultFormat).toBe('file');
+    expect(result.details.truncated).toBe(false);
     const sentPayload = callbackSender.send.mock.calls[0][1];
     expect(sentPayload.resultFormat).toBe('file');
-    // Full result is sent (not truncated) — bot decides how to deliver
+    // Result under 50KB is sent in full
     expect(sentPayload.result).toBe(longResponse);
+    expect(sentPayload.truncated).toBe(false);
   });
 
   it('sets resultFormat=message when result fits Telegram limit', async () => {
@@ -969,9 +972,31 @@ describe('ManagerDecision — research mode', () => {
     const result = await managerDecision.execute({ completedRunId: 'run-analyst' });
 
     expect(result.details.resultFormat).toBe('message');
+    expect(result.details.truncated).toBe(false);
     const sentPayload = callbackSender.send.mock.calls[0][1];
     expect(sentPayload.resultFormat).toBe('message');
     expect(sentPayload.result).toBe(shortResponse);
+    expect(sentPayload.truncated).toBe(false);
+  });
+
+  it('truncates callback result exceeding 50KB limit', async () => {
+    const hugeResponse = 'A'.repeat(60 * 1024); // 60KB
+    runRepo.findById.mockResolvedValue({ id: 'run-analyst', taskId: 'task-1', status: 'done' });
+    runRepo.findByTaskId.mockResolvedValue([
+      { id: 'run-analyst', roleName: 'analyst', status: 'done', response: hugeResponse, createdAt: t0 },
+    ]);
+
+    const result = await managerDecision.execute({ completedRunId: 'run-analyst' });
+
+    expect(result.details.truncated).toBe(true);
+    expect(result.details.resultLength).toBe(60 * 1024);
+    expect(result.details.resultFormat).toBe('file');
+
+    const sentPayload = callbackSender.send.mock.calls[0][1];
+    expect(sentPayload.truncated).toBe(true);
+    expect(sentPayload.result.length).toBeLessThan(hugeResponse.length);
+    expect(sentPayload.result).toContain('…[truncated]');
+    expect(sentPayload.resultFormat).toBe('file');
   });
 
   it('falls through to LLM if analyst failed', async () => {
