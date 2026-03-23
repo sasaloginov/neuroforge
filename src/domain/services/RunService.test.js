@@ -79,6 +79,14 @@ describe('RunService', () => {
     expect(savedRun.callbackMeta).toEqual({ chatId: 777 });
   });
 
+  it('cancels a running run', async () => {
+    const run = await service.enqueue({ taskId: 't-1', stepId: 's-1', roleName: 'dev', prompt: 'go' });
+    await service.start(run.id, 's-1');
+    const cancelled = await service.cancel(run.id);
+    expect(cancelled.status).toBe('cancelled');
+    expect(cancelled.finishedAt).toBeInstanceOf(Date);
+  });
+
   it('throws RunNotFoundError for unknown id', async () => {
     await expect(service.start('unknown', 's-1')).rejects.toThrow(RunNotFoundError);
   });

@@ -28,6 +28,7 @@ import { RestartTask } from './application/RestartTask.js';
 import { EnqueueTask } from './application/EnqueueTask.js';
 import { ResumeResearch } from './application/ResumeResearch.js';
 import { StartNextPendingTask } from './application/StartNextPendingTask.js';
+import { RunAbortRegistry } from './domain/services/RunAbortRegistry.js';
 import { GitCLIAdapter } from './infrastructure/git/gitCLIAdapter.js';
 import { createServer } from './infrastructure/http/server.js';
 import { createWorker } from './infrastructure/scheduler/worker.js';
@@ -134,16 +135,17 @@ async function main() {
   // 6. Domain services
   const taskService = new TaskService({ taskRepo });
   const runService = new RunService({ runRepo });
+  const runAbortRegistry = new RunAbortRegistry();
 
   // 7. Use cases
   const gitOps = new GitCLIAdapter({ logger: console });
   const startNextPendingTask = new StartNextPendingTask({ taskRepo, taskService, runService, roleRegistry });
   const createTask = new CreateTask({ taskService, runService, roleRegistry, projectRepo, taskRepo, callbackSender });
-  const processRun = new ProcessRun({ runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender, gitOps, workDir: config.workDir, logger: console });
+  const processRun = new ProcessRun({ runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender, gitOps, workDir: config.workDir, runAbortRegistry, logger: console });
   const managerDecision = new ManagerDecision({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, logger: console, startNextPendingTask });
   const getTaskStatus = new GetTaskStatus({ taskService, runRepo, projectRepo });
   const getRunDetail = new GetRunDetail({ taskService, runRepo });
-  const cancelTask = new CancelTask({ taskService, runRepo, projectRepo, callbackSender, startNextPendingTask, logger: console });
+  const cancelTask = new CancelTask({ taskService, runRepo, runService, projectRepo, callbackSender, startNextPendingTask, runAbortRegistry, logger: console });
   const replyToQuestion = new ReplyToQuestion({ taskService, runService, runRepo, projectRepo, callbackSender });
   const restartTask = new RestartTask({ taskService, runRepo, projectRepo, managerDecision, callbackSender });
   const enqueueTask = new EnqueueTask({ taskService, startNextPendingTask, projectRepo });

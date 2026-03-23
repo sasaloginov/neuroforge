@@ -10,9 +10,11 @@ export class ProcessRun {
   #callbackSender;
   #gitOps;
   #workDir;
+  #agentMemoryService;
+  #runAbortRegistry;
   #logger;
 
-  constructor({ runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender, gitOps, workDir, logger }) {
+  constructor({ runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender, gitOps, workDir, agentMemoryService, runAbortRegistry, logger }) {
     this.#runRepo = runRepo;
     this.#runService = runService;
     this.#taskRepo = taskRepo;
@@ -22,6 +24,8 @@ export class ProcessRun {
     this.#callbackSender = callbackSender;
     this.#gitOps = gitOps || null;
     this.#workDir = workDir || null;
+    this.#agentMemoryService = agentMemoryService || null;
+    this.#runAbortRegistry = runAbortRegistry || null;
     this.#logger = logger || console;
   }
 
@@ -29,6 +33,12 @@ export class ProcessRun {
     // takeNext() atomically dequeues and transitions to 'running'
     const run = await this.#runRepo.takeNext();
     if (!run) return null;
+
+    // Create AbortController and register before CLI call
+    const abortController = new AbortController();
+    if (this.#runAbortRegistry) {
+      this.#runAbortRegistry.register(run.id, abortController);
+    }
 
     let result = null;
     let task = null;
@@ -54,14 +64,40 @@ export class ProcessRun {
         } catch (err) {
           this.#logger.warn('[ProcessRun] Git branch checkout failed for %s: %s', task.branchName, err.message);
         }
+        // Sync all agent worktrees to the task branch so Claude CLI agents see fresh code
+        try {
+          await this.#gitOps.syncAllWorktrees(task.branchName, this.#workDir);
+        } catch (err) {
+          this.#logger.warn('[ProcessRun] Worktree sync failed for %s: %s', task.branchName, err.message);
+        }
+      }
+
+      // Retrieve relevant memories and enrich prompt
+      let enrichedPrompt = run.prompt;
+      if (this.#agentMemoryService && task) {
+        try {
+          const memories = await this.#agentMemoryService.retrieve(
+            task.projectId,
+            run.prompt,
+            { role: run.roleName, limit: 5 },
+          );
+          if (memories.length > 0) {
+            const memoryContext = this.#agentMemoryService.formatForPrompt(memories);
+            enrichedPrompt = `${run.prompt}\n\n<project_memory>\n${memoryContext}\n</project_memory>`;
+            this.#logger.log('[ProcessRun] Injected %d memories for %s', memories.length, run.roleName);
+          }
+        } catch (err) {
+          this.#logger.warn('[ProcessRun] Memory retrieval failed: %s', err.message);
+        }
       }
 
       // Pass CLI session id for continuation
-      result = await this.#chatEngine.runPrompt(run.roleName, run.prompt, {
+      result = await this.#chatEngine.runPrompt(run.roleName, enrichedPrompt, {
         sessionId: session.cliSessionId || null,
         timeoutMs: role.timeoutMs,
         runId: run.id,
         taskId: run.taskId,
+        signal: abortController.signal,
       });
 
       // Update session's cliSessionId if returned
@@ -81,6 +117,14 @@ export class ProcessRun {
         );
       }
     } catch (error) {
+      // If run was cancelled via CancelTask — don't overwrite with fail()
+      if (error.name === 'AbortError' || error.message === 'Aborted') {
+        const freshRun = await this.#runRepo.findById(run.id);
+        if (freshRun && freshRun.status === 'cancelled') {
+          return { run, result: null };
+        }
+      }
+
       if (error instanceof RunTimeoutError || (error.message && error.message.toLowerCase().includes('timeout'))) {
         await this.#runService.timeout(run.id);
       } else {
@@ -96,6 +140,11 @@ export class ProcessRun {
       }
 
       return { run, result: null };
+    } finally {
+      // Always unregister from abort registry
+      if (this.#runAbortRegistry) {
+        this.#runAbortRegistry.unregister(run.id);
+      }
     }
 
     return { run, result };

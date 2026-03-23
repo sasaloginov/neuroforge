@@ -12,7 +12,7 @@ const STATUSES = {
 
 const TRANSITIONS = {
   [STATUSES.QUEUED]:      [STATUSES.RUNNING, STATUSES.CANCELLED],
-  [STATUSES.RUNNING]:     [STATUSES.DONE, STATUSES.FAILED, STATUSES.TIMEOUT, STATUSES.INTERRUPTED],
+  [STATUSES.RUNNING]:     [STATUSES.DONE, STATUSES.FAILED, STATUSES.TIMEOUT, STATUSES.INTERRUPTED, STATUSES.CANCELLED],
   [STATUSES.DONE]:        [],
   [STATUSES.FAILED]:      [],
   [STATUSES.TIMEOUT]:     [],
@@ -101,6 +101,12 @@ export class Run {
 
   interrupt() {
     this.transitionTo(STATUSES.INTERRUPTED);
+    this.finishedAt = new Date();
+    this.durationMs = this.startedAt ? this.finishedAt - this.startedAt : null;
+  }
+
+  cancel() {
+    this.transitionTo(STATUSES.CANCELLED);
     this.finishedAt = new Date();
     this.durationMs = this.startedAt ? this.finishedAt - this.startedAt : null;
   }

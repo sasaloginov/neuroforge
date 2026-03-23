@@ -49,6 +49,13 @@ export class RunService {
     return run;
   }
 
+  async cancel(runId) {
+    const run = await this.#getRun(runId);
+    run.cancel();
+    await this.#runRepo.save(run);
+    return run;
+  }
+
   async #getRun(runId) {
     const run = await this.#runRepo.findById(runId);
     if (!run) throw new RunNotFoundError(runId);

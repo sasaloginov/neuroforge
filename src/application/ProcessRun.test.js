@@ -67,12 +67,12 @@ describe('ProcessRun', () => {
 
     expect(runRepo.takeNext).toHaveBeenCalled();
     expect(roleRegistry.get).toHaveBeenCalledWith('analyst');
-    expect(chatEngine.runPrompt).toHaveBeenCalledWith('analyst', 'Analyze this task', {
+    expect(chatEngine.runPrompt).toHaveBeenCalledWith('analyst', 'Analyze this task', expect.objectContaining({
       sessionId: 'cli-session-old',
       timeoutMs: 300000,
       runId: 'run-1',
       taskId: 'task-1',
-    });
+    }));
     expect(runService.complete).toHaveBeenCalledWith('run-1', 'Analysis result');
     expect(callbackSender.send).toHaveBeenCalledWith(
       'https://example.com/cb',
@@ -225,5 +225,110 @@ describe('ProcessRun', () => {
     expect(logger.warn).toHaveBeenCalled();
     expect(runService.complete).toHaveBeenCalled();
     expect(result.result).not.toBeNull();
+  });
+
+  describe('abort handling', () => {
+    let runAbortRegistry;
+
+    beforeEach(() => {
+      runAbortRegistry = {
+        register: vi.fn(),
+        unregister: vi.fn(),
+      };
+    });
+
+    it('registers AbortController in registry before chatEngine call', async () => {
+      const pr = new ProcessRun({
+        runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender,
+        runAbortRegistry,
+      });
+
+      await pr.execute();
+
+      expect(runAbortRegistry.register).toHaveBeenCalledWith('run-1', expect.any(AbortController));
+      // register called before chatEngine.runPrompt
+      const registerOrder = runAbortRegistry.register.mock.invocationCallOrder[0];
+      const runPromptOrder = chatEngine.runPrompt.mock.invocationCallOrder[0];
+      expect(registerOrder).toBeLessThan(runPromptOrder);
+    });
+
+    it('passes signal to chatEngine.runPrompt', async () => {
+      const pr = new ProcessRun({
+        runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender,
+        runAbortRegistry,
+      });
+
+      await pr.execute();
+
+      expect(chatEngine.runPrompt).toHaveBeenCalledWith(
+        'analyst',
+        expect.any(String),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+
+    it('unregisters from registry after successful completion', async () => {
+      const pr = new ProcessRun({
+        runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender,
+        runAbortRegistry,
+      });
+
+      await pr.execute();
+
+      expect(runAbortRegistry.unregister).toHaveBeenCalledWith('run-1');
+    });
+
+    it('unregisters from registry after error', async () => {
+      chatEngine.runPrompt.mockRejectedValue(new Error('CLI crashed'));
+      const pr = new ProcessRun({
+        runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender,
+        runAbortRegistry,
+      });
+
+      await pr.execute();
+
+      expect(runAbortRegistry.unregister).toHaveBeenCalledWith('run-1');
+    });
+
+    it('skips fail() when abort + run already cancelled', async () => {
+      chatEngine.runPrompt.mockRejectedValue(new Error('Aborted'));
+      runRepo.findById = vi.fn().mockResolvedValue({ id: 'run-1', status: 'cancelled' });
+
+      const pr = new ProcessRun({
+        runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender,
+        runAbortRegistry,
+      });
+
+      const result = await pr.execute();
+
+      expect(result.result).toBeNull();
+      expect(runService.fail).not.toHaveBeenCalled();
+      expect(runService.timeout).not.toHaveBeenCalled();
+    });
+
+    it('calls fail() when abort but run NOT cancelled', async () => {
+      chatEngine.runPrompt.mockRejectedValue(new Error('Aborted'));
+      runRepo.findById = vi.fn().mockResolvedValue({ id: 'run-1', status: 'running' });
+
+      const pr = new ProcessRun({
+        runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender,
+        runAbortRegistry,
+      });
+
+      await pr.execute();
+
+      expect(runService.fail).toHaveBeenCalledWith('run-1', 'Aborted');
+    });
+
+    it('works without runAbortRegistry (null)', async () => {
+      const pr = new ProcessRun({
+        runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender,
+      });
+
+      const result = await pr.execute();
+
+      expect(result.result).not.toBeNull();
+      expect(runService.complete).toHaveBeenCalled();
+    });
   });
 });

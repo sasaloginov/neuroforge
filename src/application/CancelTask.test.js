@@ -7,8 +7,10 @@ describe('CancelTask', () => {
   let cancelTask;
   let taskService;
   let runRepo;
+  let runService;
   let projectRepo;
   let callbackSender;
+  let runAbortRegistry;
 
   const makeTask = (overrides = {}) => ({
     id: 'task-1',
@@ -37,14 +39,23 @@ describe('CancelTask', () => {
       findByTaskId: vi.fn().mockResolvedValue([]),
       save: vi.fn().mockResolvedValue(undefined),
     };
+    runService = {
+      cancel: vi.fn().mockResolvedValue(undefined),
+    };
     projectRepo = {
       findById: vi.fn().mockResolvedValue({ id: 'proj-1', prefix: 'NF' }),
     };
     callbackSender = {
       send: vi.fn().mockResolvedValue({ ok: true }),
     };
+    runAbortRegistry = {
+      abort: vi.fn().mockReturnValue(true),
+    };
 
-    cancelTask = new CancelTask({ taskService, runRepo, projectRepo, callbackSender });
+    cancelTask = new CancelTask({
+      taskService, runRepo, runService, projectRepo, callbackSender, runAbortRegistry,
+      logger: { warn: vi.fn(), error: vi.fn() },
+    });
   });
 
   it('cancels task with queued runs', async () => {
@@ -88,16 +99,43 @@ describe('CancelTask', () => {
     await expect(cancelTask.execute({ taskId: 'task-1' })).rejects.toThrow(InvalidTransitionError);
   });
 
-  it('does not cancel running runs — they stay running', async () => {
+  it('aborts and cancels running runs', async () => {
     const runningRun = makeRun({ id: 'run-3', status: 'running' });
     const queuedRun = makeRun({ id: 'run-4', status: 'queued' });
     runRepo.findByTaskId.mockResolvedValue([runningRun, queuedRun]);
 
     const result = await cancelTask.execute({ taskId: 'task-1' });
 
-    expect(result.cancelledRuns).toBe(1);
-    expect(runningRun.transitionTo).not.toHaveBeenCalled();
+    expect(result.cancelledRuns).toBe(2);
+    expect(runAbortRegistry.abort).toHaveBeenCalledWith('run-3');
+    expect(runService.cancel).toHaveBeenCalledWith('run-3');
     expect(queuedRun.transitionTo).toHaveBeenCalledWith('cancelled');
+  });
+
+  it('handles running run that already completed (race condition)', async () => {
+    const runningRun = makeRun({ id: 'run-3', status: 'running' });
+    runRepo.findByTaskId.mockResolvedValue([runningRun]);
+    runService.cancel.mockRejectedValue(new InvalidTransitionError('done', 'cancelled', 'Run'));
+
+    const result = await cancelTask.execute({ taskId: 'task-1' });
+
+    // Should not throw — gracefully handles race
+    expect(result.cancelledRuns).toBe(1);
+    expect(runAbortRegistry.abort).toHaveBeenCalledWith('run-3');
+  });
+
+  it('works without runAbortRegistry (null)', async () => {
+    cancelTask = new CancelTask({
+      taskService, runRepo, runService, projectRepo, callbackSender,
+      logger: { warn: vi.fn(), error: vi.fn() },
+    });
+    const runningRun = makeRun({ id: 'run-3', status: 'running' });
+    runRepo.findByTaskId.mockResolvedValue([runningRun]);
+
+    const result = await cancelTask.execute({ taskId: 'task-1' });
+
+    expect(result.cancelledRuns).toBe(1);
+    expect(runService.cancel).toHaveBeenCalledWith('run-3');
   });
 
   it('sends callback on cancellation', async () => {
@@ -116,5 +154,17 @@ describe('CancelTask', () => {
     await cancelTask.execute({ taskId: 'task-1' });
 
     expect(callbackSender.send).not.toHaveBeenCalled();
+  });
+
+  it('calls startNextPendingTask after cancellation', async () => {
+    const startNextPendingTask = { execute: vi.fn().mockResolvedValue({ started: false }) };
+    cancelTask = new CancelTask({
+      taskService, runRepo, runService, projectRepo, callbackSender, startNextPendingTask, runAbortRegistry,
+      logger: { warn: vi.fn(), error: vi.fn() },
+    });
+
+    await cancelTask.execute({ taskId: 'task-1' });
+
+    expect(startNextPendingTask.execute).toHaveBeenCalledWith({ projectId: 'proj-1' });
   });
 });

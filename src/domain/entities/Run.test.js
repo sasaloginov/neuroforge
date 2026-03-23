@@ -56,6 +56,15 @@ describe('Run', () => {
       expect(run.status).toBe('cancelled');
     });
 
+    it('running → cancelled via cancel()', () => {
+      const run = Run.create(defaults);
+      run.start('s-1');
+      run.cancel();
+      expect(run.status).toBe('cancelled');
+      expect(run.finishedAt).toBeInstanceOf(Date);
+      expect(run.durationMs).toBeGreaterThanOrEqual(0);
+    });
+
     it('rejects queued → done', () => {
       const run = Run.create(defaults);
       expect(() => run.transitionTo('done')).toThrow(InvalidTransitionError);
