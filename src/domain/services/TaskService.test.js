@@ -124,6 +124,20 @@ describe('TaskService', () => {
     await expect(service.incrementRevision(task.id)).rejects.toThrow(RevisionLimitError);
   });
 
+  it('completes research task to research_done', async () => {
+    const task = await service.createTask({ projectId: 'p-1', title: 'X' });
+    await service.advanceTask(task.id);
+    const researched = await service.completeResearch(task.id);
+    expect(researched.status).toBe('research_done');
+  });
+
+  it('updates task mode', async () => {
+    const task = await service.createTask({ projectId: 'p-1', title: 'X', mode: 'research' });
+    expect(task.mode).toBe('research');
+    const updated = await service.updateMode(task.id, 'full');
+    expect(updated.mode).toBe('full');
+  });
+
   it('escalates a task to needs_escalation', async () => {
     const task = await service.createTask({ projectId: 'p-1', title: 'X' });
     await service.advanceTask(task.id);

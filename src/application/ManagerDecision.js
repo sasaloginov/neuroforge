@@ -39,7 +39,7 @@ export class ManagerDecision {
     const task = await this.#taskService.getTask(completedRun.taskId);
 
     // If task is already terminal or cancelled, skip
-    if (['done', 'failed', 'cancelled'].includes(task.status)) {
+    if (['done', 'failed', 'cancelled', 'research_done'].includes(task.status)) {
       return { action: 'skipped', details: { reason: 'Task already terminal', taskId: task.id } };
     }
 
@@ -292,17 +292,17 @@ export class ManagerDecision {
       ? fullResult.slice(0, MAX_CALLBACK_RESULT_BYTES) + '\n\n…[truncated]'
       : fullResult;
 
-    await this.#taskService.completeTask(task.id);
+    await this.#taskService.completeResearch(task.id);
 
     if (task.callbackUrl) {
       await this.#callbackSender.send(
         task.callbackUrl,
         {
-          type: 'done',
+          type: 'research_done',
           taskId: task.id,
           shortId: task.shortId,
           mode: 'research',
-          summary: 'Исследование завершено',
+          summary: 'Исследование завершено. Отправьте /resume для продолжения в разработку.',
           result,
           resultFormat,
           truncated,

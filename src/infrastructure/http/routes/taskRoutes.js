@@ -119,6 +119,34 @@ const restartSchema = {
   },
 };
 
+const resumeSchema = {
+  params: {
+    type: 'object',
+    required: ['id'],
+    properties: {
+      id: { type: 'string' },
+    },
+  },
+  body: {
+    type: 'object',
+    required: ['instruction'],
+    properties: {
+      instruction: { type: 'string', minLength: 1, maxLength: 10000 },
+    },
+    additionalProperties: false,
+  },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string' },
+        shortId: { type: 'string' },
+        status: { type: 'string' },
+      },
+    },
+  },
+};
+
 const cancelSchema = {
   params: {
     type: 'object',
@@ -183,6 +211,17 @@ export function taskRoutes({ useCases }) {
       assertProjectScope(request.apiKey, status.task.projectId);
 
       const result = await useCases.restartTask.execute({ taskId: status.task.id });
+      return reply.send(result);
+    });
+
+    fastify.post('/tasks/:id/resume', { schema: resumeSchema }, async (request, reply) => {
+      const status = await useCases.getTaskStatus.execute({ taskId: request.params.id });
+      assertProjectScope(request.apiKey, status.task.projectId);
+
+      const result = await useCases.resumeResearch.execute({
+        taskId: status.task.id,
+        instruction: request.body.instruction,
+      });
       return reply.send(result);
     });
 

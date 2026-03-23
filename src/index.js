@@ -26,6 +26,7 @@ import { CancelTask } from './application/CancelTask.js';
 import { ReplyToQuestion } from './application/ReplyToQuestion.js';
 import { RestartTask } from './application/RestartTask.js';
 import { EnqueueTask } from './application/EnqueueTask.js';
+import { ResumeResearch } from './application/ResumeResearch.js';
 import { StartNextPendingTask } from './application/StartNextPendingTask.js';
 import { GitCLIAdapter } from './infrastructure/git/gitCLIAdapter.js';
 import { createServer } from './infrastructure/http/server.js';
@@ -146,6 +147,10 @@ async function main() {
   const replyToQuestion = new ReplyToQuestion({ taskService, runService, runRepo, projectRepo, callbackSender });
   const restartTask = new RestartTask({ taskService, runRepo, projectRepo, managerDecision, callbackSender });
   const enqueueTask = new EnqueueTask({ taskService, startNextPendingTask, projectRepo });
+  const resumeResearch = new ResumeResearch({
+    taskService, runService, runRepo, taskRepo, projectRepo,
+    roleRegistry, callbackSender, logger: console,
+  });
 
   // 8. Worker + Scheduler
   const worker = createWorker({ processRun, managerDecision, logger: console });
@@ -164,7 +169,7 @@ async function main() {
     database: new DatabaseHealthChecker({ pool: getPool() }),
     scheduler: new SchedulerHealthChecker({ scheduler }),
   };
-  const useCases = { createTask, getTaskStatus, getRunDetail, cancelTask, replyToQuestion, restartTask, enqueueTask };
+  const useCases = { createTask, getTaskStatus, getRunDetail, cancelTask, replyToQuestion, restartTask, enqueueTask, resumeResearch };
   const repos = { apiKeyRepo, userRepo, projectRepo, taskRepo, runRepo };
   const server = await createServer({ useCases, repos, checkers, version, startedAt });
 
