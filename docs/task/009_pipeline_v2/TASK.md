@@ -17,7 +17,7 @@ high
 - Manager LLM вызывается stateless между каждым шагом, дублируя всю историю
 - 3 reviewer'а параллельно строят один и тот же контекст
 - Tester дублирует работу developer'а (тесты)
-- CTO — это `git merge`, не нужен LLM
+- CTO — это `git merge`, отдельный LLM-агент для этого избыточен
 - Стоимость типичной задачи: **$7-8** при целевых **$2-3**
 
 ### Решение
@@ -42,14 +42,14 @@ high
 
 #### Сессия 3: Reviewer (sonnet)
 - **Один reviewer** вместо трёх, объединённый чеклист (architecture + business + security)
-- **Начинает с git diff**, а не с обхода проекта
-- PM передаёт: diff, список изменённых файлов, context.md, acceptance criteria
+- **Сам берёт `git diff`** из репозитория (developer коммитит перед ревью)
+- Начинает с анализа diff — что изменилось, потом углубляется в нужные файлы
 - Если diff пустой — сразу PASS (не тратит токены на чтение)
 - При re-review: `--resume` к той же сессии, видит предыдущие findings
 
 ### Убираемые роли
 - **tester** — developer и так пишет/запускает тесты
-- **cto** — заменяется детерминистическим шагом: `git checkout main && git merge --no-ff <branch> && git push`
+- **cto** — merge делает PM после успешного ревью (PM имеет доступ к Bash)
 
 ### Новый пайплайн
 ```
@@ -61,16 +61,16 @@ PM (sonnet, --resume)
  ├─ запускает developer (opus, --resume analyst session)
  │   └─ код + тесты + commit
  ├─ получает результат developer'а
- ├─ запускает reviewer (sonnet, new session, получает diff)
- │   └─ architecture + business + security review
+ ├─ запускает reviewer (sonnet, new session)
+ │   └─ сам берёт git diff, ревью: architecture + business + security
  ├─ получает результат reviewer'а
  ├─ если findings:
  │   ├─ формирует fix prompt с конкретными замечаниями
  │   ├─ запускает developer (opus, --resume)
- │   ├─ запускает reviewer (sonnet, --resume, новый diff)
+ │   ├─ запускает reviewer (sonnet, --resume)
  │   └─ макс 3 итерации → escalation
  ├─ если PASS:
- │   ├─ git merge --no-ff + push (детерминистический шаг)
+ │   ├─ PM делает merge + push (через Bash)
  │   └─ complete task
  └─ callback на каждом шаге
 ```
@@ -93,14 +93,15 @@ PM (sonnet, --resume)
 
 ### Unified reviewer
 - [ ] Один reviewer вместо трёх (architecture + business + security)
-- [ ] Reviewer получает `git diff` как часть промпта от PM
-- [ ] Если diff пустой — PASS без чтения кода
+- [ ] Reviewer сам делает `git diff main..HEAD` для анализа изменений
+- [ ] Начинает с diff, углубляется в файлы по необходимости
+- [ ] Если diff пустой — сразу PASS без чтения кода
 - [ ] Объединённый чеклист: DDD/SOLID + AC coverage + OWASP
 - [ ] При re-review: `--resume` к сессии reviewer'а
 - [ ] Формат ответа: тот же (VERDICT + FINDINGS + SUMMARY)
 
-### Merge как скрипт
-- [ ] `git checkout main && git merge --no-ff <branch> && git push` — без LLM
+### Merge через PM
+- [ ] После PASS от reviewer'а PM делает merge + push через Bash
 - [ ] При merge conflict — task escalation (не автоматическое разрешение)
 - [ ] Удаление feature-ветки после успешного merge
 
@@ -139,7 +140,7 @@ PM (sonnet, --resume)
 - Application:
   - `ManagerDecision.js` — **переписать**: stateless → stateful PM через --resume
   - `ProcessRun.js` — **изменить**: поддержка session sharing (analyst → developer)
-  - Новый `MergeStep.js` — детерминистический merge без LLM
+  - Убрать `MergeStep` — PM делает merge сам
 
 - Infrastructure:
   - `claudeCLIAdapter.js` — без изменений (--resume уже работает)
@@ -166,7 +167,7 @@ PM (sonnet, --resume)
 | Merge conflict при автоматическом merge | Низкая | Escalation + callback, не автоматическое разрешение |
 
 ## Definition of Done
-- [ ] Пайплайн: PM → analyst → developer (resume) → reviewer → merge (скрипт)
+- [ ] Пайплайн: PM → analyst → developer (resume) → reviewer → PM merge
 - [ ] 3 сессии на задачу вместо 7-8 процессов
 - [ ] Все существующие тесты проходят
 - [ ] E2E: задача проходит полный цикл через новый пайплайн
