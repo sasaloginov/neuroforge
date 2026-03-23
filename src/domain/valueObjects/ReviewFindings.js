@@ -103,6 +103,7 @@ export class ReviewFindings {
   static parseAll(reviewerRuns) {
     const allFindings = [];
     const reviewersWithBlockingIssues = new Set();
+    const reviewersWithIssues = new Set();
 
     for (const run of reviewerRuns) {
       const parsed = ReviewFindings.parse(run.response || '', run.roleName);
@@ -111,6 +112,9 @@ export class ReviewFindings {
         allFindings.push({ ...f, reviewerRole: run.roleName });
       }
 
+      if (parsed.findings.length > 0) {
+        reviewersWithIssues.add(run.roleName);
+      }
       if (parsed.hasBlockingFindings) {
         reviewersWithBlockingIssues.add(run.roleName);
       }
@@ -124,6 +128,7 @@ export class ReviewFindings {
       blockingFindings,
       minorFindings,
       reviewersWithBlockingIssues: [...reviewersWithBlockingIssues],
+      reviewersWithIssues: [...reviewersWithIssues],
       hasBlockingIssues: blockingFindings.length > 0,
     };
   }

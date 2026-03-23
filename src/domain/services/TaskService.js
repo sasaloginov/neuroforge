@@ -1,6 +1,8 @@
 import { Task } from '../entities/Task.js';
 import { RevisionLimitError } from '../errors/RevisionLimitError.js';
 import { TaskNotFoundError } from '../errors/TaskNotFoundError.js';
+import { isValidMode } from '../valueObjects/TaskMode.js';
+import { ValidationError } from '../errors/ValidationError.js';
 
 const MAX_REVISIONS = 3;
 
@@ -73,6 +75,9 @@ export class TaskService {
   }
 
   async updateMode(taskId, mode) {
+    if (!isValidMode(mode)) {
+      throw new ValidationError(`Invalid task mode: ${mode}`);
+    }
     const task = await this.getTask(taskId);
     task.mode = mode;
     await this.#taskRepo.save(task);
