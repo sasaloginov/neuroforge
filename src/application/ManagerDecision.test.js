@@ -138,6 +138,19 @@ describe('ManagerDecision', () => {
       expect(chatEngine.runPrompt).not.toHaveBeenCalled();
     });
 
+    it('reviewer PASS with MINOR findings → still merge_and_complete (minors are informational)', async () => {
+      runRepo.findById.mockResolvedValue(makeRun({ roleName: 'reviewer', status: 'done' }));
+      runRepo.findByTaskId.mockResolvedValue([
+        makeRun({ id: 'run-dev', roleName: 'developer', status: 'done', createdAt: new Date('2026-01-01') }),
+        makeRun({ id: 'run-rev', roleName: 'reviewer', status: 'done', response: 'VERDICT: PASS\n[MINOR] Naming style\nSUMMARY: Minor style issues only', createdAt: new Date('2026-01-02') }),
+      ]);
+
+      const result = await managerDecision.execute({ completedRunId: 'run-rev' });
+
+      expect(result.action).toBe('merge_and_complete');
+      expect(chatEngine.runPrompt).not.toHaveBeenCalled();
+    });
+
     it('reviewer FAIL with blocking → revision cycle', async () => {
       runRepo.findById.mockResolvedValue(makeRun({ roleName: 'reviewer', status: 'done' }));
       runRepo.findByTaskId.mockResolvedValue([

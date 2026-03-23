@@ -2,15 +2,19 @@ import { InvalidStateError } from '../domain/errors/InvalidStateError.js';
 
 export class RestartTask {
   #taskService;
+  #runService;
   #runRepo;
   #projectRepo;
+  #roleRegistry;
   #managerDecision;
   #callbackSender;
 
-  constructor({ taskService, runRepo, projectRepo, managerDecision, callbackSender }) {
+  constructor({ taskService, runService, runRepo, projectRepo, roleRegistry, managerDecision, callbackSender }) {
     this.#taskService = taskService;
+    this.#runService = runService;
     this.#runRepo = runRepo;
     this.#projectRepo = projectRepo;
+    this.#roleRegistry = roleRegistry;
     this.#managerDecision = managerDecision;
     this.#callbackSender = callbackSender;
   }
@@ -46,10 +50,8 @@ export class RestartTask {
 
     // No terminal runs — start from scratch with analyst phase
     if (terminalRuns.length === 0) {
-      const { RunService } = await import('../domain/services/RunService.js');
-      const runService = new RunService({ runRepo: this.#runRepo });
-      const roleName = 'implementer'; // Pipeline v2: use implementer
-      await runService.enqueue({
+      const roleName = this.#roleRegistry.has('implementer') ? 'implementer' : 'analyst';
+      await this.#runService.enqueue({
         taskId,
         roleName,
         prompt: `Фаза: analyst.\n\nИсследуй и спроектируй задачу: ${task.title}\n\n${task.description || ''}`,

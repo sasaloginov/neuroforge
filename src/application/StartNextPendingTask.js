@@ -3,9 +3,8 @@ export class StartNextPendingTask {
   #runService;
   #roleRegistry;
 
-  constructor({ taskRepo, taskService, runService, roleRegistry }) {
+  constructor({ taskRepo, runService, roleRegistry }) {
     this.#taskRepo = taskRepo;
-    // taskService kept in constructor signature for backward compat but no longer used
     this.#runService = runService;
     this.#roleRegistry = roleRegistry;
   }

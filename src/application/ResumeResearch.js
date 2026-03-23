@@ -1,4 +1,5 @@
 import { InvalidStateError } from '../domain/errors/InvalidStateError.js';
+import { ValidationError } from '../domain/errors/ValidationError.js';
 
 export class ResumeResearch {
   #taskService;
@@ -31,7 +32,7 @@ export class ResumeResearch {
     }
 
     if (!instruction || !instruction.trim()) {
-      throw new InvalidStateError('instruction is required');
+      throw new ValidationError('instruction is required');
     }
 
     // Atomically activate (research_done → in_progress) — fails if another task is active

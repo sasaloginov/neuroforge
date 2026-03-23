@@ -6,8 +6,10 @@ import { InvalidStateError } from '../domain/errors/InvalidStateError.js';
 describe('RestartTask', () => {
   let restartTask;
   let taskService;
+  let runService;
   let runRepo;
   let projectRepo;
+  let roleRegistry;
   let managerDecision;
   let callbackSender;
 
@@ -38,11 +40,17 @@ describe('RestartTask', () => {
       getTask: vi.fn().mockResolvedValue(makeTask()),
       restartTask: vi.fn().mockResolvedValue(makeTask({ status: 'in_progress' })),
     };
+    runService = {
+      enqueue: vi.fn().mockResolvedValue({ id: 'run-new', status: 'queued' }),
+    };
     runRepo = {
       findByTaskId: vi.fn().mockResolvedValue([makeRun()]),
     };
     projectRepo = {
       findById: vi.fn().mockResolvedValue({ id: 'proj-1', prefix: 'NF' }),
+    };
+    roleRegistry = {
+      has: vi.fn().mockImplementation((name) => name === 'implementer'),
     };
     managerDecision = {
       execute: vi.fn().mockResolvedValue({ action: 'spawn_run', role: 'developer', prompt: 'Fix the code' }),
@@ -51,7 +59,7 @@ describe('RestartTask', () => {
       send: vi.fn().mockResolvedValue({ ok: true }),
     };
 
-    restartTask = new RestartTask({ taskService, runRepo, projectRepo, managerDecision, callbackSender });
+    restartTask = new RestartTask({ taskService, runService, runRepo, projectRepo, roleRegistry, managerDecision, callbackSender });
   });
 
   it('returns shortId in response', async () => {
@@ -99,6 +107,30 @@ describe('RestartTask', () => {
     const result = await restartTask.execute({ taskId: 'task-1' });
 
     expect(result.shortId).toBeUndefined();
+  });
+
+  it('enqueues analyst via runService when no terminal runs (DI, no dynamic import)', async () => {
+    runRepo.findByTaskId.mockResolvedValue([makeRun({ status: 'running' })]);
+
+    const result = await restartTask.execute({ taskId: 'task-1' });
+
+    expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      roleName: 'implementer',
+      taskId: 'task-1',
+    }));
+    expect(result.decision.action).toBe('spawn_run');
+    expect(managerDecision.execute).not.toHaveBeenCalled();
+  });
+
+  it('falls back to analyst role when implementer not registered', async () => {
+    roleRegistry.has.mockReturnValue(false);
+    runRepo.findByTaskId.mockResolvedValue([]);
+
+    const result = await restartTask.execute({ taskId: 'task-1' });
+
+    expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      roleName: 'analyst',
+    }));
   });
 
   it('delegates to managerDecision when terminal runs exist', async () => {

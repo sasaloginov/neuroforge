@@ -1,5 +1,6 @@
 import { ResumeResearch } from './ResumeResearch.js';
 import { InvalidStateError } from '../domain/errors/InvalidStateError.js';
+import { ValidationError } from '../domain/errors/ValidationError.js';
 
 describe('ResumeResearch', () => {
   let resumeResearch;
@@ -132,16 +133,16 @@ describe('ResumeResearch', () => {
     ).rejects.toThrow('Cannot resume: another task is active');
   });
 
-  it('throws InvalidStateError when instruction is empty', async () => {
+  it('throws ValidationError when instruction is empty', async () => {
     await expect(
       resumeResearch.execute({ taskId: 'task-1', instruction: '' }),
-    ).rejects.toThrow('instruction is required');
+    ).rejects.toThrow(ValidationError);
   });
 
-  it('throws InvalidStateError when instruction is whitespace', async () => {
+  it('throws ValidationError when instruction is whitespace', async () => {
     await expect(
       resumeResearch.execute({ taskId: 'task-1', instruction: '   ' }),
-    ).rejects.toThrow('instruction is required');
+    ).rejects.toThrow(ValidationError);
   });
 
   it('includes previous analyst response in prompt', async () => {

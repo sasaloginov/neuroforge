@@ -41,13 +41,14 @@ export class PgSessionRepo extends ISessionRepo {
 
   /** Atomically find or create an active session for project+role. */
   async findOrCreate(projectId, roleName) {
-    const pool = getPool();
+    const client = await getPool().connect();
     const now = new Date();
 
-    await pool.query('BEGIN');
     try {
+      await client.query('BEGIN');
+
       // Lock existing active session row (if any) to prevent race conditions
-      const existing = await pool.query(
+      const existing = await client.query(
         `SELECT * FROM sessions
          WHERE project_id = $1 AND role_name = $2 AND status = 'active'
          LIMIT 1
@@ -57,14 +58,14 @@ export class PgSessionRepo extends ISessionRepo {
 
       let row;
       if (existing.rows.length > 0) {
-        const { rows } = await pool.query(
+        const { rows } = await client.query(
           `UPDATE sessions SET updated_at = $1 WHERE id = $2 RETURNING *`,
           [now, existing.rows[0].id],
         );
         row = rows[0];
       } else {
         const id = crypto.randomUUID();
-        const { rows } = await pool.query(
+        const { rows } = await client.query(
           `INSERT INTO sessions (id, project_id, cli_session_id, role_name, status, created_at, updated_at)
            VALUES ($1, $2, NULL, $3, 'active', $4, $5)
            RETURNING *`,
@@ -73,22 +74,25 @@ export class PgSessionRepo extends ISessionRepo {
         row = rows[0];
       }
 
-      await pool.query('COMMIT');
+      await client.query('COMMIT');
       return Session.fromRow(row);
     } catch (err) {
-      await pool.query('ROLLBACK');
+      await client.query('ROLLBACK');
       throw err;
+    } finally {
+      client.release();
     }
   }
 
   /** Atomically find or create an active session for task+role. */
   async findOrCreateForTask(taskId, projectId, roleName) {
-    const pool = getPool();
+    const client = await getPool().connect();
     const now = new Date();
 
-    await pool.query('BEGIN');
     try {
-      const existing = await pool.query(
+      await client.query('BEGIN');
+
+      const existing = await client.query(
         `SELECT * FROM sessions
          WHERE task_id = $1 AND role_name = $2 AND status = 'active'
          LIMIT 1
@@ -98,14 +102,14 @@ export class PgSessionRepo extends ISessionRepo {
 
       let row;
       if (existing.rows.length > 0) {
-        const { rows } = await pool.query(
+        const { rows } = await client.query(
           `UPDATE sessions SET updated_at = $1 WHERE id = $2 RETURNING *`,
           [now, existing.rows[0].id],
         );
         row = rows[0];
       } else {
         const id = crypto.randomUUID();
-        const { rows } = await pool.query(
+        const { rows } = await client.query(
           `INSERT INTO sessions (id, project_id, task_id, cli_session_id, role_name, status, created_at, updated_at)
            VALUES ($1, $2, $3, NULL, $4, 'active', $5, $6)
            RETURNING *`,
@@ -114,11 +118,13 @@ export class PgSessionRepo extends ISessionRepo {
         row = rows[0];
       }
 
-      await pool.query('COMMIT');
+      await client.query('COMMIT');
       return Session.fromRow(row);
     } catch (err) {
-      await pool.query('ROLLBACK');
+      await client.query('ROLLBACK');
       throw err;
+    } finally {
+      client.release();
     }
   }
 

@@ -139,7 +139,7 @@ async function main() {
 
   // 7. Use cases
   const gitOps = new GitCLIAdapter({ logger: console });
-  const startNextPendingTask = new StartNextPendingTask({ taskRepo, taskService, runService, roleRegistry });
+  const startNextPendingTask = new StartNextPendingTask({ taskRepo, runService, roleRegistry });
   const createTask = new CreateTask({ taskService, runService, roleRegistry, projectRepo, taskRepo, callbackSender });
   const processRun = new ProcessRun({ runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender, gitOps, workDir: config.workDir, runAbortRegistry, logger: console });
   const managerDecision = new ManagerDecision({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, sessionRepo, gitOps, workDir: config.workDir, logger: console, startNextPendingTask });
@@ -147,7 +147,7 @@ async function main() {
   const getRunDetail = new GetRunDetail({ taskService, runRepo });
   const cancelTask = new CancelTask({ taskService, runRepo, runService, projectRepo, callbackSender, startNextPendingTask, runAbortRegistry, logger: console });
   const replyToQuestion = new ReplyToQuestion({ taskService, runService, runRepo, projectRepo, callbackSender });
-  const restartTask = new RestartTask({ taskService, runRepo, projectRepo, managerDecision, callbackSender });
+  const restartTask = new RestartTask({ taskService, runService, runRepo, projectRepo, roleRegistry, managerDecision, callbackSender });
   const enqueueTask = new EnqueueTask({ taskService, startNextPendingTask, projectRepo });
   const resumeResearch = new ResumeResearch({
     taskService, runService, runRepo, taskRepo, projectRepo,

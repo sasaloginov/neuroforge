@@ -16,7 +16,7 @@ import { ReviewFindings } from '../domain/valueObjects/ReviewFindings.js';
  */
 
 const REVIEWER_ROLES = ['reviewer', 'reviewer-architecture', 'reviewer-business', 'reviewer-security'];
-const MAX_REVIEW_REVISIONS = 3;
+const DEFAULT_MAX_REVIEW_REVISIONS = 3;
 
 export class ManagerDecision {
   #runService;
@@ -28,11 +28,12 @@ export class ManagerDecision {
   #sessionRepo;
   #gitOps;
   #workDir;
+  #maxReviewRevisions;
   #logger;
 
   #startNextPendingTask;
 
-  constructor({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, sessionRepo, gitOps, workDir, logger, startNextPendingTask }) {
+  constructor({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, sessionRepo, gitOps, workDir, maxReviewRevisions, logger, startNextPendingTask }) {
     this.#runService = runService;
     this.#taskService = taskService;
     this.#chatEngine = chatEngine;
@@ -42,6 +43,7 @@ export class ManagerDecision {
     this.#sessionRepo = sessionRepo || null;
     this.#gitOps = gitOps || null;
     this.#workDir = workDir || null;
+    this.#maxReviewRevisions = maxReviewRevisions ?? DEFAULT_MAX_REVIEW_REVISIONS;
     this.#logger = logger || console;
     this.#startNextPendingTask = startNextPendingTask || null;
   }
@@ -72,8 +74,11 @@ export class ManagerDecision {
 
     // --- Deterministic routing (no LLM) ---
 
+    // Resolve effective mode: 'auto' → 'full' (default pipeline)
+    const effectiveMode = task.mode === 'research' ? 'research' : 'full';
+
     // Research-mode: auto-complete after analyst (no LLM call)
-    const researchResult = await this.#handleResearchMode(task, allRuns);
+    const researchResult = await this.#handleResearchMode(task, allRuns, effectiveMode);
     if (researchResult) return researchResult;
 
     // Deterministic pipeline transitions
@@ -102,11 +107,13 @@ export class ManagerDecision {
     const role = lastRun.roleName;
 
     // 1. analyst_done → developer phase (--resume implementer session)
+    // Also handles legacy analyst role and implementer without explicit phase prefix
     if (role === 'analyst' || (role === 'implementer' && this.#isAnalystPhase(lastRun))) {
       return this.#transitionToDeveloper(task, lastRun);
     }
 
     // 2. developer_done → reviewer
+    // Also handles legacy developer role and implementer in dev/fix phase
     if (role === 'developer' || (role === 'implementer' && this.#isDeveloperPhase(lastRun))) {
       // Check for re-review after fix
       const devFixResult = await this.#handleDevFixComplete(task, allRuns);
@@ -225,15 +232,25 @@ SUMMARY: краткое резюме`;
     const { blockingFindings, minorFindings, reviewersWithIssues, hasBlockingIssues } =
       ReviewFindings.parseAll(reviewerRuns);
 
-    const actionableFindings = [...blockingFindings, ...minorFindings.filter(f => f.severity !== 'LOW')];
+    // Extract verdicts from all reviewer runs
+    const verdicts = reviewerRuns.map(r => {
+      const match = (r.response || '').match(/\bVERDICT\s*:\s*(PASS|FAIL)\b/i);
+      return match ? match[1].toUpperCase() : null;
+    });
+    const hasFailVerdict = verdicts.includes('FAIL');
+    const allPass = verdicts.length > 0 && verdicts.every(v => v === 'PASS');
 
-    // All reviews PASS (no actionable findings) → merge and complete
-    if (actionableFindings.length === 0) {
+    // PASS verdict with no blocking findings → merge and complete
+    // (minor findings are informational when verdict is PASS)
+    if (!hasBlockingIssues && !hasFailVerdict) {
       return this.#mergeAndComplete(task);
     }
 
-    // Blocking findings + over revision limit → escalate
-    if (task.revisionCount >= MAX_REVIEW_REVISIONS) {
+    // Collect actionable findings for revision: all blocking + non-LOW minors
+    const actionableFindings = [...blockingFindings, ...minorFindings.filter(f => f.severity !== 'LOW')];
+
+    // Over revision limit → escalate
+    if (task.revisionCount >= this.#maxReviewRevisions) {
       await this.#taskService.escalateTask(task.id);
       if (task.callbackUrl) {
         await this.#callbackSender.send(
@@ -372,7 +389,7 @@ SUMMARY: краткое резюме`;
         this.#logger.info('[ManagerDecision] Merged branch %s to main', task.branchName);
       } catch (err) {
         this.#logger.error('[ManagerDecision] Merge failed: %s', err.message);
-        // Merge failure → escalate instead of completing
+        // Merge failure → escalate for manual conflict resolution (no LLM merge)
         await this.#taskService.escalateTask(task.id);
         if (task.callbackUrl) {
           await this.#callbackSender.send(
@@ -381,7 +398,7 @@ SUMMARY: краткое резюме`;
               type: 'needs_escalation',
               taskId: task.id,
               shortId: task.shortId,
-              findings: [{ severity: 'CRITICAL', description: `Merge failed: ${err.message}` }],
+              findings: [{ severity: 'CRITICAL', description: `Merge failed (requires manual conflict resolution): ${err.message}` }],
               revisionCount: task.revisionCount,
             },
             task.callbackMeta,
@@ -407,8 +424,8 @@ SUMMARY: краткое резюме`;
   /**
    * Research mode: after analyst completes → auto complete_task.
    */
-  async #handleResearchMode(task, allRuns) {
-    if (task.mode !== 'research') return null;
+  async #handleResearchMode(task, allRuns, effectiveMode) {
+    if (effectiveMode !== 'research') return null;
 
     const completedRuns = allRuns
       .filter(r => ['done', 'failed', 'timeout', 'interrupted'].includes(r.status));
@@ -675,13 +692,18 @@ SUMMARY: краткое резюме`;
   /** Check if an implementer run was in analyst phase. */
   #isAnalystPhase(run) {
     if (run.roleName !== 'implementer') return false;
-    return run.prompt?.includes('Фаза: analyst') || !run.prompt?.includes('Фаза: developer');
+    const prompt = run.prompt ?? '';
+    // Explicit analyst phase marker at start of prompt
+    if (prompt.startsWith('Фаза: analyst')) return true;
+    // Legacy: no phase prefix at all → treat as analyst (backward compat for in-flight tasks)
+    return !prompt.startsWith('Фаза: developer') && !prompt.startsWith('Фаза: fix');
   }
 
   /** Check if an implementer run was in developer phase. */
   #isDeveloperPhase(run) {
     if (run.roleName !== 'implementer') return false;
-    return run.prompt?.includes('Фаза: developer') || run.prompt?.includes('Фаза: fix');
+    const prompt = run.prompt ?? '';
+    return prompt.startsWith('Фаза: developer') || prompt.startsWith('Фаза: fix');
   }
 }
 

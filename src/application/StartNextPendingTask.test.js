@@ -33,7 +33,7 @@ describe('StartNextPendingTask', () => {
       has: vi.fn().mockImplementation((name) => name === 'implementer'),
     };
 
-    startNext = new StartNextPendingTask({ taskRepo, taskService, runService, roleRegistry });
+    startNext = new StartNextPendingTask({ taskRepo, runService, roleRegistry });
   });
 
   it('atomically activates oldest pending task and enqueues implementer', async () => {
