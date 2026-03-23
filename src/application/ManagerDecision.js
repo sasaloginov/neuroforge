@@ -127,6 +127,16 @@ export class ManagerDecision {
       return this.#handleReviewComplete(task, allRuns);
     }
 
+    // 4. Legacy roles (tester, cto) — handle gracefully for in-flight tasks during deploy.
+    //    tester_done → treat like reviewer PASS (tests passed = move forward)
+    //    cto_done → treat like merge approval
+    if (role === 'tester') {
+      return this.#transitionToReviewer(task);
+    }
+    if (role === 'cto') {
+      return this.#mergeAndComplete(task);
+    }
+
     return null;
   }
 
@@ -167,22 +177,33 @@ export class ManagerDecision {
 
   /**
    * developer_done → spawn reviewer.
+   * Unified reviewer covers architecture (DDD/SOLID), business logic, and security (OWASP).
+   * The role definition (roles/reviewer.md) contains the full checklist.
+   * The prompt here provides task context — the role's system prompt handles review methodology.
    */
   async #transitionToReviewer(task) {
     const roleName = this.#roleRegistry.has('reviewer') ? 'reviewer' : 'reviewer-architecture';
 
-    const prompt = `Задача: ${task.title}
+    const prompt = `Задача: ${task.shortId ?? ''} ${task.title}
 Описание: ${task.description ?? 'нет'}
 Ветка: ${task.branchName ?? 'не назначена'}
 
-Проведи полное ревью (архитектура + бизнес-логика + безопасность).
-Начни с \`git diff main..HEAD\` — это главный вход для ревью.
+Проведи полное ревью по трём направлениям:
+1. Архитектура (DDD layers, dependency rule, SOLID, DRY/KISS)
+2. Бизнес-логика (acceptance criteria, edge cases, тесты)
+3. Безопасность (SQL injection, command injection, secrets, input validation)
 
-Ответь в формате:
+Начни с \`git diff main..HEAD\` — это главный вход для ревью.
+Используй чеклисты из своей роли для каждого направления.
+
+Ответь СТРОГО в формате:
 VERDICT: PASS или FAIL
 FINDINGS (если есть):
-[SEVERITY] Описание проблемы
-SUMMARY: краткое резюме`;
+[SEVERITY] Описание проблемы (reviewer)
+SUMMARY: краткое резюме
+
+Severity: CRITICAL > MAJOR > HIGH > MINOR > LOW
+FAIL = есть CRITICAL/MAJOR/HIGH. PASS = только MINOR/LOW или нет findings.`;
 
     await this.#runService.enqueue({
       taskId: task.id,
@@ -249,6 +270,12 @@ SUMMARY: краткое резюме`;
     // Collect actionable findings for revision: all blocking + non-LOW minors
     const actionableFindings = [...blockingFindings, ...minorFindings.filter(f => f.severity !== 'LOW')];
 
+    // FAIL verdict with no actionable findings (only LOW-severity) → merge anyway
+    // LOW-only findings should not block the pipeline
+    if (actionableFindings.length === 0) {
+      return this.#mergeAndComplete(task);
+    }
+
     // Over revision limit → escalate
     if (task.revisionCount >= this.#maxReviewRevisions) {
       await this.#taskService.escalateTask(task.id);
@@ -265,6 +292,7 @@ SUMMARY: краткое резюме`;
           task.callbackMeta,
         );
       }
+      await this.#tryStartNext(task.projectId);
       return { action: 'needs_escalation', details: { findings: blockingFindings, revisionCount: task.revisionCount } };
     }
 
@@ -404,6 +432,7 @@ SUMMARY: краткое резюме`;
             task.callbackMeta,
           );
         }
+        await this.#tryStartNext(task.projectId);
         return { action: 'needs_escalation', details: { reason: `Merge failed: ${err.message}` } };
       }
     }

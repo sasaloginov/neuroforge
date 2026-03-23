@@ -183,6 +183,67 @@ describe('ManagerDecision', () => {
       expect(chatEngine.runPrompt).not.toHaveBeenCalled();
     });
 
+    it('reviewer FAIL with LOW-only findings → merge_and_complete (LOW does not block)', async () => {
+      runRepo.findById.mockResolvedValue(makeRun({ roleName: 'reviewer', status: 'done' }));
+      runRepo.findByTaskId.mockResolvedValue([
+        makeRun({ id: 'run-dev', roleName: 'developer', status: 'done', createdAt: new Date('2026-01-01') }),
+        makeRun({ id: 'run-rev', roleName: 'reviewer', status: 'done', response: '[LOW] Minor style issue\nVERDICT: FAIL', createdAt: new Date('2026-01-02') }),
+      ]);
+
+      const result = await managerDecision.execute({ completedRunId: 'run-rev' });
+
+      expect(result.action).toBe('merge_and_complete');
+      expect(taskService.completeTask).toHaveBeenCalledWith('task-1');
+      expect(chatEngine.runPrompt).not.toHaveBeenCalled();
+    });
+
+    it('legacy tester_done → transitions to reviewer', async () => {
+      runRepo.findById.mockResolvedValue(makeRun({ roleName: 'tester', status: 'done' }));
+      runRepo.findByTaskId.mockResolvedValue([
+        makeRun({ id: 'run-dev', roleName: 'developer', status: 'done', createdAt: new Date('2026-01-01') }),
+        makeRun({ id: 'run-tester', roleName: 'tester', status: 'done', createdAt: new Date('2026-01-02') }),
+      ]);
+
+      const result = await managerDecision.execute({ completedRunId: 'run-tester' });
+
+      expect(result.action).toBe('deterministic_transition');
+      expect(result.details.from).toBe('developer');
+      expect(result.details.to).toBe('reviewer');
+      expect(chatEngine.runPrompt).not.toHaveBeenCalled();
+    });
+
+    it('legacy cto_done → merge_and_complete', async () => {
+      runRepo.findById.mockResolvedValue(makeRun({ roleName: 'cto', status: 'done' }));
+      runRepo.findByTaskId.mockResolvedValue([
+        makeRun({ id: 'run-cto', roleName: 'cto', status: 'done', createdAt: new Date('2026-01-01') }),
+      ]);
+
+      const result = await managerDecision.execute({ completedRunId: 'run-cto' });
+
+      expect(result.action).toBe('merge_and_complete');
+      expect(taskService.completeTask).toHaveBeenCalledWith('task-1');
+      expect(chatEngine.runPrompt).not.toHaveBeenCalled();
+    });
+
+    it('needs_escalation calls tryStartNext to free project slot', async () => {
+      const startNext = { execute: vi.fn().mockResolvedValue({ started: false }) };
+      const md = new ManagerDecision({
+        runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo,
+        startNextPendingTask: startNext,
+      });
+
+      taskService.getTask.mockResolvedValue(makeTask({ revisionCount: 3, projectId: 'proj-1' }));
+      runRepo.findById.mockResolvedValue(makeRun({ roleName: 'reviewer', status: 'done' }));
+      runRepo.findByTaskId.mockResolvedValue([
+        makeRun({ id: 'run-dev', roleName: 'developer', status: 'done', createdAt: new Date('2026-01-01') }),
+        makeRun({ id: 'run-rev', roleName: 'reviewer', status: 'done', response: '[CRITICAL] Security flaw\nVERDICT: FAIL', createdAt: new Date('2026-01-02') }),
+      ]);
+
+      await md.execute({ completedRunId: 'run-rev' });
+
+      expect(startNext.execute).toHaveBeenCalledWith({ projectId: 'proj-1' });
+    });
+
     it('sends progress callback on developer transition', async () => {
       runRepo.findById.mockResolvedValue(makeRun({ roleName: 'analyst', status: 'done' }));
       runRepo.findByTaskId.mockResolvedValue([
