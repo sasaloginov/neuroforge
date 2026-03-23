@@ -1,33 +1,51 @@
 export class CancelTask {
   #taskService;
   #runRepo;
+  #runService;
   #projectRepo;
   #callbackSender;
   #startNextPendingTask;
+  #runAbortRegistry;
   #logger;
 
-  constructor({ taskService, runRepo, projectRepo, callbackSender, startNextPendingTask, logger }) {
+  constructor({ taskService, runRepo, runService, projectRepo, callbackSender, startNextPendingTask, runAbortRegistry, logger }) {
     this.#taskService = taskService;
     this.#runRepo = runRepo;
+    this.#runService = runService || null;
     this.#projectRepo = projectRepo;
     this.#callbackSender = callbackSender;
     this.#startNextPendingTask = startNextPendingTask || null;
+    this.#runAbortRegistry = runAbortRegistry || null;
     this.#logger = logger || console;
   }
 
   async execute({ taskId }) {
     const task = await this.#taskService.getTask(taskId);
 
-    // Cancel all queued runs first
     const runs = await this.#runRepo.findByTaskId(taskId);
     const queuedRuns = runs.filter(r => r.status === 'queued');
+    const runningRuns = runs.filter(r => r.status === 'running');
 
+    // 1. Cancel queued runs
     for (const run of queuedRuns) {
       run.transitionTo('cancelled');
       await this.#runRepo.save(run);
     }
 
-    // Cancel the task (throws InvalidTransitionError if already terminal)
+    // 2. Abort + cancel running runs
+    for (const run of runningRuns) {
+      if (this.#runAbortRegistry) {
+        this.#runAbortRegistry.abort(run.id);
+      }
+      try {
+        await this.#runService.cancel(run.id);
+      } catch (err) {
+        // Run may have already completed — that's OK
+        this.#logger.warn('[CancelTask] Could not cancel run %s: %s', run.id, err.message);
+      }
+    }
+
+    // 3. Cancel the task (throws InvalidTransitionError if already terminal)
     await this.#taskService.cancelTask(taskId);
 
     const project = await this.#projectRepo.findById(task.projectId);
@@ -52,6 +70,7 @@ export class CancelTask {
       }
     }
 
-    return { taskId, shortId, status: 'cancelled', cancelledRuns: queuedRuns.length };
+    const totalCancelled = queuedRuns.length + runningRuns.length;
+    return { taskId, shortId, status: 'cancelled', cancelledRuns: totalCancelled };
   }
 }
