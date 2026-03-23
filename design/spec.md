@@ -1,91 +1,62 @@
-# Spec: Fix cancel задачи — остановка активных runs
+# Spec: Явный параметр mode при создании задачи
 
 ## Проблема
 
-`POST /tasks/:id/cancel` не останавливает running runs и не убивает CLI-процессы. `CancelTask.js` фильтрует только `queued` runs, игнорируя `running`. Процесс Claude CLI продолжает работу, потребляет ресурсы и может записать результат после отмены.
+Режим задачи (`research` / `full`) нельзя указать из клиента (TG-бот). Default `full` не позволяет создавать research-задачи через бота. Нет режима `auto` для делегирования решения системе.
 
 ## Решение
 
-1. **RunAbortRegistry** — in-memory реестр `Map<runId, AbortController>`
-2. **ProcessRun** регистрирует AbortController перед вызовом CLI, передаёт `signal` в chatEngine
-3. **CancelTask** для running runs: вызывает `abort()` через реестр + переводит run в `cancelled`
-4. **Run entity** — разрешить переход `running → cancelled`
+Добавить `auto` в перечисление режимов. Сделать `auto` значением по умолчанию. Прокинуть `mode` в NeuroforgeClient (mybot) и TG-команды бота.
 
 ---
 
-## Диаграмма компонентов (C4 Level 3)
+## Диаграмма: Mode flow в пайплайне
 
 ```mermaid
-graph TB
-    subgraph Application Layer
-        CT[CancelTask]
-        PR[ProcessRun]
-        RAR[RunAbortRegistry]
-    end
+flowchart TD
+    API["POST /tasks<br/>mode: auto|full|research"] --> CT[CreateTask]
+    CT --> TS[Task.create<br/>mode сохраняется]
+    TS --> ENQUEUE[Enqueue analyst]
 
-    subgraph Domain Layer
-        RS[RunService]
-        RE[Run Entity]
-    end
+    ENQUEUE --> ANALYST[Analyst run]
+    ANALYST --> MD{ManagerDecision}
 
-    subgraph Infrastructure Layer
-        CLA[ClaudeCLIAdapter]
-        PROC[claude CLI process]
-    end
+    MD -->|mode=research| RESEARCH["#handleResearchMode()<br/>auto-complete → research_done"]
+    MD -->|mode=full или auto| MANAGER["Manager LLM<br/>решает next step"]
 
-    CT -->|"1. abort(runId)"| RAR
-    CT -->|"2. cancel(runId)"| RS
-    PR -->|"1. register(runId, ac)"| RAR
-    PR -->|"2. runPrompt(signal)"| CLA
-    PR -->|"3. unregister(runId)"| RAR
-    CLA -->|"signal.abort → SIGTERM"| PROC
-    RS -->|"transitionTo(cancelled)"| RE
-
-    style RAR fill:#f9f,stroke:#333
-    style CT fill:#ff9,stroke:#333
-    style PR fill:#ff9,stroke:#333
+    MANAGER --> DEV[Developer]
+    DEV --> REV[Reviewers]
+    REV --> TEST[Tester]
+    TEST --> CTO[CTO]
+    CTO --> DONE[complete_task]
 ```
 
-## Sequence Diagram: Cancel с running run
+## Sequence Diagram: Создание задачи с mode через бота
 
 ```mermaid
 sequenceDiagram
-    participant API as HTTP API
-    participant CT as CancelTask
-    participant RAR as RunAbortRegistry
-    participant RS as RunService
-    participant PR as ProcessRun
-    participant CLA as ClaudeCLIAdapter
-    participant CLI as claude process
+    participant User as Пользователь
+    participant TG as TG Bot
+    participant NC as NeuroforgeClient
+    participant API as Neuroforge API
+    participant CT as CreateTask
+    participant Task as Task Entity
 
-    Note over PR,CLI: Ранее: ProcessRun запустил run
-    PR->>RAR: register(runId, abortController)
-    PR->>CLA: runPrompt(role, prompt, {signal})
-    CLA->>CLI: spawn('claude', args)
+    User->>TG: /task Реализовать фичу X
+    TG->>TG: mode не указан → 'auto'
+    TG->>NC: createTask(projectId, title, desc, callbackUrl, meta, {mode: 'auto'})
+    NC->>API: POST /tasks {mode: 'auto', ...}
+    API->>CT: execute({mode: 'auto', ...})
+    CT->>Task: Task.create({mode: 'auto'})
+    Task-->>CT: task (mode='auto')
 
-    Note over API: Пользователь отменяет задачу
-    API->>CT: execute({taskId})
-    CT->>CT: findByTaskId → queued + running runs
-
-    loop Для каждого queued run
-        CT->>RS: cancel(runId)
-    end
-
-    loop Для каждого running run
-        CT->>RAR: abort(runId)
-        RAR-->>CLA: signal.aborted = true
-        CLA-->>CLI: SIGTERM
-        CT->>RS: cancel(runId)
-    end
-
-    CT->>CT: cancelTask(taskId)
-    CT->>CT: callback + startNextPending
-
-    Note over PR: ProcessRun получает reject
-    CLA-->>PR: reject(Error('Aborted'))
-    PR->>PR: catch: check run.status === 'cancelled'
-    PR->>PR: status already cancelled → skip fail()
-    PR->>RAR: unregister(runId) [в finally]
+    User->>TG: /research Исследовать архитектуру Y
+    TG->>TG: mode = 'research'
+    TG->>NC: createTask(..., {mode: 'research'})
+    NC->>API: POST /tasks {mode: 'research', ...}
+    API->>CT: execute({mode: 'research', ...})
+    CT->>Task: Task.create({mode: 'research'})
+    Task-->>CT: task (mode='research')
 ```
 
 ---
@@ -94,349 +65,253 @@ sequenceDiagram
 
 ### 1. Domain Layer
 
-#### 1.1. `src/domain/entities/Run.js` — ИЗМЕНИТЬ
+#### 1.1. `src/domain/valueObjects/TaskMode.js` — ИЗМЕНИТЬ
 
-**Добавить `cancelled` в TRANSITIONS для `running`:**
+Добавить `AUTO`:
 
 ```javascript
-// Было:
-[STATUSES.RUNNING]: [STATUSES.DONE, STATUSES.FAILED, STATUSES.TIMEOUT, STATUSES.INTERRUPTED],
+const MODES = {
+  FULL: 'full',
+  RESEARCH: 'research',
+  AUTO: 'auto',
+};
 
-// Стало:
-[STATUSES.RUNNING]: [STATUSES.DONE, STATUSES.FAILED, STATUSES.TIMEOUT, STATUSES.INTERRUPTED, STATUSES.CANCELLED],
+function isValidMode(mode) {
+  return Object.values(MODES).includes(mode);
+}
+
+export { MODES as TaskMode, isValidMode };
 ```
 
-**Добавить метод `cancel()`:**
+#### 1.2. `src/domain/entities/Task.js` — ИЗМЕНИТЬ
+
+Изменить default mode с `'full'` на `'auto'`:
 
 ```javascript
-cancel() {
-  this.transitionTo(STATUSES.CANCELLED);
-  this.finishedAt = new Date();
-  this.durationMs = this.startedAt ? this.finishedAt - this.startedAt : null;
-}
-```
+// constructor (строка 43):
+this.mode = mode ?? 'auto';
 
-#### 1.2. НОВЫЙ: `src/application/RunAbortRegistry.js`
+// static create (строка 56):
+const validatedMode = mode ?? 'auto';
 
-In-memory реестр AbortController-ов. Координация runtime-процессов — application-level сервис.
-
-```javascript
-export class RunAbortRegistry {
-  #controllers = new Map();
-
-  /** @param {string} runId  @param {AbortController} controller */
-  register(runId, controller) {
-    this.#controllers.set(runId, controller);
-  }
-
-  /** @param {string} runId */
-  unregister(runId) {
-    this.#controllers.delete(runId);
-  }
-
-  /**
-   * Abort a running run. No-op if runId not registered.
-   * @param {string} runId
-   * @returns {boolean} true if aborted
-   */
-  abort(runId) {
-    const controller = this.#controllers.get(runId);
-    if (controller) {
-      controller.abort();
-      this.#controllers.delete(runId);
-      return true;
-    }
-    return false;
-  }
-
-  /** @param {string} runId  @returns {boolean} */
-  has(runId) {
-    return this.#controllers.has(runId);
-  }
-}
-```
-
-#### 1.3. `src/domain/services/RunService.js` — ИЗМЕНИТЬ
-
-Добавить метод `cancel()`:
-
-```javascript
-async cancel(runId) {
-  const run = await this.#getRun(runId);
-  run.cancel();
-  await this.#runRepo.save(run);
-  return run;
-}
+// static fromRow (строка 109):
+mode: row.mode ?? 'auto',
 ```
 
 ### 2. Application Layer
 
-#### 2.1. `src/application/ProcessRun.js` — ИЗМЕНИТЬ
+#### 2.1. `src/application/ManagerDecision.js` — ИЗМЕНИТЬ
 
-**Конструктор** — добавить `runAbortRegistry`:
+`#handleResearchMode()` уже проверяет `task.mode !== 'research'`, а `auto` и `full` идут в стандартный LLM-пайплайн. **Изменений в логике не нужно.**
+
+Единственное изменение — `buildManagerPrompt()` уже показывает `task.mode` менеджеру. Когда mode=`auto`, менеджер увидит `Режим: auto` — это информативно и корректно.
+
+**Нет изменений в ManagerDecision.**
+
+### 3. Infrastructure Layer
+
+#### 3.1. `src/infrastructure/http/routes/taskRoutes.js` — ИЗМЕНИТЬ
+
+Добавить `'auto'` в enum, изменить default:
 
 ```javascript
-constructor({ ..., runAbortRegistry, ... }) {
-  ...
-  this.#runAbortRegistry = runAbortRegistry || null;
+// В createTaskSchema.body.properties:
+mode: { type: 'string', enum: ['full', 'research', 'auto'], default: 'auto' },
+```
+
+#### 3.2. `src/infrastructure/persistence/migrations/` — НОВЫЙ файл
+
+Если в БД есть CHECK constraint на mode:
+
+```javascript
+export async function up(knex) {
+  // Обновить CHECK constraint если существует
+  await knex.raw(`
+    ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_mode_check;
+    ALTER TABLE tasks ADD CONSTRAINT tasks_mode_check
+      CHECK (mode IN ('full', 'research', 'auto'));
+  `);
+
+  // Изменить default для колонки
+  await knex.raw(`ALTER TABLE tasks ALTER COLUMN mode SET DEFAULT 'auto'`);
+}
+
+export async function down(knex) {
+  await knex.raw(`
+    ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_mode_check;
+    ALTER TABLE tasks ADD CONSTRAINT tasks_mode_check
+      CHECK (mode IN ('full', 'research'));
+  `);
+  await knex.raw(`ALTER TABLE tasks ALTER COLUMN mode SET DEFAULT 'full'`);
 }
 ```
 
-**Метод `execute()`** — обернуть CLI-вызов в AbortController:
+**Важно:** НЕ обновляем существующие записи. Задачи с `mode='full'` остаются `full`.
+
+### 4. mybot (клиент)
+
+#### 4.1. `src/infrastructure/neuroforge/NeuroforgeClient.js` (mybot) — ИЗМЕНИТЬ
+
+Добавить `options` параметр:
 
 ```javascript
-async execute() {
-  const run = await this.#runRepo.takeNext();
-  if (!run) return null;
+/**
+ * Create a new task in Neuroforge.
+ * @param {string} projectId
+ * @param {string} title
+ * @param {string} description
+ * @param {string} callbackUrl
+ * @param {object} [callbackMeta]
+ * @param {object} [options]
+ * @param {string} [options.mode] - 'auto' | 'full' | 'research'
+ * @param {string} [options.status] - 'backlog' (optional)
+ * @returns {Promise<{taskId: string, status: string}>}
+ */
+async createTask(projectId, title, description, callbackUrl, callbackMeta, options = {}) {
+  if (!callbackUrl) throw new Error('callbackUrl is required for createTask');
+  return this._request('POST', '/tasks', {
+    projectId,
+    title,
+    description,
+    callbackUrl,
+    callbackMeta,
+    ...(options.mode && { mode: options.mode }),
+    ...(options.status && { status: options.status }),
+  });
+}
+```
 
-  // Создать AbortController и зарегистрировать ДО вызова CLI
-  const abortController = new AbortController();
-  if (this.#runAbortRegistry) {
-    this.#runAbortRegistry.register(run.id, abortController);
+**Backward compatible:** существующие вызовы `createTask(projectId, title, desc, url, meta)` продолжают работать — `options` = `undefined` → `{}`.
+
+#### 4.2. `src/infrastructure/telegram/handlers/commandHandler.js` (mybot) — ИЗМЕНИТЬ
+
+Добавить команду `/research`:
+
+```javascript
+// Рядом с bot.command('task', ...)
+bot.command('research', async (ctx) => {
+  if (isGroupChat(ctx)) return;
+
+  const text = ctx.message.text.split(/\s+/).slice(1).join(' ').trim();
+  if (!text) {
+    await ctx.reply('Использование: /research <описание задачи на исследование>');
+    return;
   }
 
-  let result = null;
-  let task = null;
+  const title = text.slice(0, 100);
 
   try {
-    // ... existing git/session/memory logic ...
-
-    result = await this.#chatEngine.runPrompt(run.roleName, enrichedPrompt, {
-      sessionId: session.cliSessionId || null,
-      timeoutMs: role.timeoutMs,
-      runId: run.id,
-      taskId: run.taskId,
-      signal: abortController.signal,  // ← НОВОЕ
-    });
-
-    // ... existing completion logic ...
-  } catch (error) {
-    // Если run отменён через CancelTask — НЕ вызываем fail()
-    if (error.message === 'Aborted') {
-      const freshRun = await this.#runRepo.findById(run.id);
-      if (freshRun && freshRun.status === 'cancelled') {
-        return { run, result: null };
-      }
-    }
-
-    // ... existing error handling (timeout/fail) ...
-  } finally {
-    // ВСЕГДА удаляем из реестра
-    if (this.#runAbortRegistry) {
-      this.#runAbortRegistry.unregister(run.id);
-    }
+    const { taskId } = await neuroforgeClient.createTask(
+      neuroforgeProjectId,
+      title,
+      text,
+      callbackUrl,
+      { chatId: ctx.chat.id },
+      { mode: 'research' },
+    );
+    await ctx.reply(`🔬 Research-задача принята\nID: ${taskId}`);
+  } catch (err) {
+    console.error('[/research] Error:', err.message);
+    await ctx.reply(`Ошибка: ${err.message}`);
   }
-
-  return { run, result };
-}
-```
-
-#### 2.2. `src/application/CancelTask.js` — ИЗМЕНИТЬ
-
-**Конструктор** — добавить `runService`, `runAbortRegistry`:
-
-```javascript
-constructor({ taskService, runRepo, runService, projectRepo, callbackSender, startNextPendingTask, runAbortRegistry, logger }) {
-  ...
-  this.#runService = runService;
-  this.#runAbortRegistry = runAbortRegistry || null;
-}
-```
-
-**Метод `execute()`**:
-
-```javascript
-async execute({ taskId }) {
-  const task = await this.#taskService.getTask(taskId);
-  const runs = await this.#runRepo.findByTaskId(taskId);
-
-  const queuedRuns = runs.filter(r => r.status === 'queued');
-  const runningRuns = runs.filter(r => r.status === 'running');
-
-  // 1. Cancel queued runs
-  for (const run of queuedRuns) {
-    run.transitionTo('cancelled');
-    await this.#runRepo.save(run);
-  }
-
-  // 2. Abort + cancel running runs
-  for (const run of runningRuns) {
-    if (this.#runAbortRegistry) {
-      this.#runAbortRegistry.abort(run.id);
-    }
-    await this.#runService.cancel(run.id);
-  }
-
-  // 3. Cancel the task
-  await this.#taskService.cancelTask(taskId);
-
-  // ... existing callback + startNextPending logic ...
-
-  const totalCancelled = queuedRuns.length + runningRuns.length;
-  return { taskId, shortId, status: 'cancelled', cancelledRuns: totalCancelled };
-}
-```
-
-### 3. Infrastructure Layer (Composition Root)
-
-#### 3.1. `src/index.js` — **КРИТИЧНЫЙ ФАЙЛ ОРКЕСТРАЦИИ**
-
-**Обоснование:** Нужно создать singleton RunAbortRegistry и инжектить его в ProcessRun и CancelTask.
-
-```javascript
-// Импорт (добавить)
-import { RunAbortRegistry } from './application/RunAbortRegistry.js';
-
-// После создания domain services (секция 6)
-const runAbortRegistry = new RunAbortRegistry();
-
-// Обновить создание ProcessRun (секция 7)
-const processRun = new ProcessRun({
-  runRepo, runService, taskRepo, chatEngine, sessionRepo,
-  roleRegistry, callbackSender, gitOps,
-  workDir: config.workDir, logger: console,
-  runAbortRegistry,  // ← НОВОЕ
-});
-
-// Обновить создание CancelTask (секция 7)
-const cancelTask = new CancelTask({
-  taskService, runRepo, projectRepo, callbackSender,
-  startNextPendingTask, logger: console,
-  runService,         // ← НОВОЕ (ранее не передавался)
-  runAbortRegistry,   // ← НОВОЕ
 });
 ```
+
+Существующая `/task` команда — без изменений (не передаёт mode → default `auto` на сервере).
 
 ---
 
 ## Критичные файлы оркестрации
 
-| Файл | Затрагивается? | Что именно | Обоснование |
-|---|---|---|---|
-| `src/index.js` | ✅ **ДА** | Создание RunAbortRegistry, DI в ProcessRun и CancelTask | Singleton реестр должен быть расшарен между use cases |
-| `src/infrastructure/claude/claudeCLIAdapter.js` | ❌ Нет | Уже поддерживает AbortSignal | — |
-| `src/infrastructure/scheduler/` | ❌ Нет | — | — |
-| `restart.sh` | ❌ Нет | — | — |
+| Файл | Затрагивается? | Обоснование |
+|---|---|---|
+| `src/index.js` | ❌ Нет | Нет новых DI-зависимостей |
+| `src/infrastructure/claude/claudeCLIAdapter.js` | ❌ Нет | — |
+| `src/infrastructure/scheduler/` | ❌ Нет | — |
+| `restart.sh` | ❌ Нет | — |
 
 ---
 
-## ADR: In-memory RunAbortRegistry vs. DB-based signaling
+## ADR: Семантика `auto` vs `full`
 
 ### Контекст
-Нужен механизм для отмены running CLI-процессов по runId.
-
-### Варианты
-1. **In-memory Map<runId, AbortController>** — RunAbortRegistry
-2. **DB-based** — флаг `cancel_requested` в таблице runs, polling в ProcessRun
-3. **Хранение proc в ClaudeCLIAdapter** — Map<runId, ChildProcess>
+Добавляем `auto` как третий режим задачи. Нужно определить, чем он отличается от `full`.
 
 ### Решение
-Вариант 1 — in-memory RunAbortRegistry.
+`auto` и `full` **идентичны по поведению** на текущем этапе. Оба проходят через Manager LLM.
 
 ### Обоснование
-- Нейроцех — single-process приложение
-- AbortSignal — стандартный Node.js механизм, уже поддержан в ClaudeCLIAdapter
-- Нулевая задержка (vs. polling для DB)
-- Простота (KISS)
-- Вариант 3 нарушает DDD (infrastructure знает о runId)
+- `auto` = "я не указываю режим, пусть система решит" (default для обратной совместимости)
+- `full` = "я явно хочу полный цикл" (осознанный выбор)
+- `research` = "только исследование" (детерминистический auto-complete)
+- Разница в намерении вызывающего, не в runtime-поведении
+- В будущем `auto` может получить heuristic-определение режима — не ломая `full`
 
 ### Последствия
-- Не работает в multi-instance (не текущий сценарий)
-- При crash — abort не произойдёт, но `#recover()` в ManagerScheduler пометит runs как interrupted
-- Registry живёт в памяти — при restart теряется, что приемлемо
-
----
-
-## Race Conditions и митигации
-
-### 1. Cancel между takeNext() и chatEngine.runPrompt()
-
-**Сценарий:** CancelTask вызван после `register()` но до подписки на signal в ClaudeCLIAdapter.
-
-**Митигация:** `AbortController.abort()` ставит `signal.aborted = true` синхронно. ClaudeCLIAdapter проверяет `signal.aborted` ДО spawn — процесс не запустится.
-
-### 2. Cancel одновременно с завершением run
-
-**Сценарий:** Run естественно завершается (done) в момент когда CancelTask вызывает `cancel()`.
-
-**Митигация:** `RunService.cancel()` перезагружает run из БД. Если статус уже `done` — `transitionTo('cancelled')` бросит `InvalidTransitionError`. CancelTask должен перехватить это:
-
-```javascript
-for (const run of runningRuns) {
-  if (this.#runAbortRegistry) {
-    this.#runAbortRegistry.abort(run.id);
-  }
-  try {
-    await this.#runService.cancel(run.id);
-  } catch (err) {
-    // Run уже завершился — это OK
-    this.#logger.warn('[CancelTask] Could not cancel run %s: %s', run.id, err.message);
-  }
-}
-```
-
-### 3. Двойная обработка ошибки в ProcessRun
-
-**Сценарий:** CancelTask вызывает abort() и cancel(). ProcessRun получает reject('Aborted') и пытается fail().
-
-**Митигация:** ProcessRun проверяет `freshRun.status === 'cancelled'` перед вызовом fail(). Если уже cancelled — просто выходит.
+- Старые клиенты без mode → получают `auto` вместо `full` → поведение не меняется
+- Новые клиенты могут явно указать `research` или `full`
+- `auto` — точка расширения для будущей auto-детекции
 
 ---
 
 ## Тесты
 
-### Unit: `src/application/RunAbortRegistry.test.js` (НОВЫЙ)
+### Unit: `src/domain/valueObjects/TaskMode.test.js` (НОВЫЙ или дополнить)
 
 ```
-✓ register + abort — вызывает controller.abort(), возвращает true
-✓ abort незарегистрированного runId — возвращает false, не падает
-✓ unregister — после удаления abort() возвращает false
-✓ повторный register перезаписывает предыдущий controller
-✓ has() — true для зарегистрированных, false для остальных
+✓ isValidMode('auto') → true
+✓ isValidMode('full') → true
+✓ isValidMode('research') → true
+✓ isValidMode('unknown') → false
+✓ TaskMode.AUTO === 'auto'
 ```
 
-### Unit: `src/domain/entities/Run.test.js` (ДОПОЛНИТЬ)
+### Unit: `src/domain/entities/Task.test.js` (ДОПОЛНИТЬ)
 
 ```
-✓ running → cancelled — разрешён
-✓ cancel() — устанавливает finishedAt и durationMs
-✓ queued → cancelled — по-прежнему работает
+✓ Task.create() без mode → mode = 'auto'
+✓ Task.create({mode: 'full'}) → mode = 'full'
+✓ Task.create({mode: 'research'}) → mode = 'research'
+✓ Task.create({mode: 'auto'}) → mode = 'auto'
+✓ Task.create({mode: 'invalid'}) → throws Error
 ```
 
-### Unit: `src/application/CancelTask.test.js` (НОВЫЙ)
+### Unit: `src/application/ManagerDecision.test.js` (ДОПОЛНИТЬ)
 
 ```
-✓ отменяет queued runs (существующее поведение)
-✓ отменяет running runs через abort + cancel
-✓ отменяет queued + running одновременно, cancelledRuns = total
-✓ running run без записи в реестре — graceful (abort false, run cancelled в БД)
-✓ running run уже завершился (InvalidTransitionError) — перехватывается, не ломает cancel
-✓ callback отправляется с type: 'failed'
-✓ startNextPendingTask вызывается после отмены
-✓ работает без runAbortRegistry (null) — только cancel в БД
+✓ mode=auto → #handleResearchMode returns null (goes to LLM)
+✓ mode=research → #handleResearchMode auto-completes
+✓ mode=full → #handleResearchMode returns null (goes to LLM)
 ```
 
-### Unit: `src/application/ProcessRun.test.js` (ДОПОЛНИТЬ)
+### Unit (mybot): `src/infrastructure/neuroforge/NeuroforgeClient.test.js` (ДОПОЛНИТЬ)
 
 ```
-✓ регистрирует AbortController в реестре перед chatEngine.runPrompt
-✓ передаёт signal в chatEngine.runPrompt
-✓ удаляет из реестра в finally при успехе
-✓ удаляет из реестра в finally при ошибке
-✓ при Abort + run.status === 'cancelled' — не вызывает fail()
-✓ при Abort + run.status !== 'cancelled' — вызывает fail()
-✓ работает без runAbortRegistry (null)
+✓ createTask без options → не отправляет mode
+✓ createTask с {mode: 'research'} → отправляет mode в body
+✓ createTask backward compatible — 5 аргументов работают
+```
+
+### Integration: API
+
+```
+✓ POST /tasks без mode → task.mode = 'auto'
+✓ POST /tasks с mode='research' → task.mode = 'research'
+✓ POST /tasks с mode='full' → task.mode = 'full'
+✓ POST /tasks с mode='invalid' → 400 Bad Request
 ```
 
 ---
 
 ## Acceptance Criteria
 
-1. ✅ `POST /tasks/:id/cancel` отменяет и queued, и running runs
-2. ✅ Running CLI-процесс получает SIGTERM при cancel
-3. ✅ Running run переходит в статус `cancelled` в БД
-4. ✅ `cancelledRuns` в ответе API включает running runs
-5. ✅ ProcessRun не перезаписывает cancelled статус на failed
-6. ✅ Race condition при одновременном завершении и cancel — не падает
-7. ✅ Все существующие тесты проходят
-8. ✅ `src/index.js` обновлён — RunAbortRegistry создан и инжектирован
+1. ✅ API принимает `mode: 'auto' | 'full' | 'research'` при создании задачи
+2. ✅ Default mode = `auto` (обратная совместимость)
+3. ✅ `research` — только analyst → research_done (существующее поведение)
+4. ✅ `full` и `auto` — полный пайплайн через Manager LLM (существующее поведение)
+5. ✅ NeuroforgeClient (mybot) поддерживает передачу `mode`
+6. ✅ TG-бот: `/research` создаёт задачу с `mode=research`
+7. ✅ TG-бот: `/task` продолжает работать без mode (→ auto)
+8. ✅ Миграция БД: добавлен `auto` в constraint, default → `auto`
+9. ✅ Существующие задачи с `mode=full` не затрагиваются
+10. ✅ Все существующие тесты проходят
