@@ -49,7 +49,8 @@ describe('ResumeResearch', () => {
       findById: vi.fn().mockResolvedValue({ id: 'proj-1', prefix: 'NF' }),
     };
     roleRegistry = {
-      get: vi.fn().mockReturnValue({ name: 'developer' }),
+      get: vi.fn().mockReturnValue({ name: 'implementer' }),
+      has: vi.fn().mockImplementation((name) => name === 'implementer'),
     };
     callbackSender = {
       send: vi.fn().mockResolvedValue({ ok: true }),
@@ -61,7 +62,7 @@ describe('ResumeResearch', () => {
     });
   });
 
-  it('resumes research_done task → enqueues developer with instruction', async () => {
+  it('resumes research_done task → enqueues implementer with instruction', async () => {
     const result = await resumeResearch.execute({
       taskId: 'task-1',
       instruction: 'Передай в разработку',
@@ -74,11 +75,11 @@ describe('ResumeResearch', () => {
     // Mode updated to full
     expect(taskService.updateMode).toHaveBeenCalledWith('task-1', 'full');
 
-    // Developer enqueued
+    // Implementer enqueued (developer phase)
     expect(runService.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         taskId: 'task-1',
-        roleName: 'developer',
+        roleName: 'implementer',
       }),
     );
 
@@ -96,6 +97,20 @@ describe('ResumeResearch', () => {
         taskId: 'task-1',
       }),
       { chatId: 1 },
+    );
+  });
+
+  it('falls back to developer role when implementer not available', async () => {
+    roleRegistry.has.mockReturnValue(false);
+    roleRegistry.get.mockReturnValue({ name: 'developer' });
+
+    await resumeResearch.execute({
+      taskId: 'task-1',
+      instruction: 'Go',
+    });
+
+    expect(runService.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ roleName: 'developer' }),
     );
   });
 
@@ -129,7 +144,7 @@ describe('ResumeResearch', () => {
     ).rejects.toThrow('instruction is required');
   });
 
-  it('includes previous analyst response in developer prompt', async () => {
+  it('includes previous analyst response in prompt', async () => {
     const analystResponse = '# Detailed Analysis\n\nLong research findings about the topic.';
     runRepo.findByTaskId.mockResolvedValue([
       { id: 'run-analyst', roleName: 'analyst', status: 'done', response: analystResponse, createdAt: t0 },
@@ -169,7 +184,6 @@ describe('ResumeResearch', () => {
     expect(result.status).toBe('in_progress');
     const prompt = runService.enqueue.mock.calls[0][0].prompt;
     expect(prompt).toContain('Start development');
-    // No research context injected
     expect(prompt).not.toContain('Результаты предыдущего исследования');
   });
 

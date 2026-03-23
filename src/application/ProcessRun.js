@@ -50,16 +50,33 @@ export class ProcessRun {
       task = run.taskId ? await this.#taskRepo.findById(run.taskId) : null;
       const projectId = task ? task.projectId : run.taskId;
 
-      // Find or create session record (atomic upsert)
-      const session = await this.#sessionRepo.findOrCreate(projectId, run.roleName);
+      // Find or create session — prefer task-scoped sessions (Pipeline v2)
+      let session;
+      if (task && this.#sessionRepo.findOrCreateForTask) {
+        session = await this.#sessionRepo.findOrCreateForTask(task.id, projectId, run.roleName);
+      } else {
+        session = await this.#sessionRepo.findOrCreate(projectId, run.roleName);
+      }
 
-      // Developer resumes analyst session (shared context — files already read)
-      if (run.roleName === 'developer' && !session.cliSessionId) {
-        const analystSession = await this.#sessionRepo.findByProjectAndRole(projectId, 'analyst');
-        if (analystSession?.cliSessionId) {
-          session.cliSessionId = analystSession.cliSessionId;
-          await this.#sessionRepo.save(session);
-          this.#logger.info('[ProcessRun] Developer inheriting analyst session: %s', analystSession.cliSessionId);
+      // Implementer/developer resumes analyst/implementer session (shared context)
+      const devRoles = ['developer', 'implementer'];
+      const analystRoles = ['analyst', 'implementer'];
+      if (devRoles.includes(run.roleName) && !session.cliSessionId) {
+        // Try to find existing implementer or analyst session for this task
+        for (const srcRole of analystRoles) {
+          if (srcRole === run.roleName) continue;
+          let srcSession = null;
+          if (task && this.#sessionRepo.findByTaskAndRole) {
+            srcSession = await this.#sessionRepo.findByTaskAndRole(task.id, srcRole);
+          } else {
+            srcSession = await this.#sessionRepo.findByProjectAndRole(projectId, srcRole);
+          }
+          if (srcSession?.cliSessionId) {
+            session.cliSessionId = srcSession.cliSessionId;
+            await this.#sessionRepo.save(session);
+            this.#logger.info('[ProcessRun] %s inheriting %s session: %s', run.roleName, srcRole, srcSession.cliSessionId);
+            break;
+          }
         }
       }
 
@@ -74,7 +91,6 @@ export class ProcessRun {
         } catch (err) {
           this.#logger.warn('[ProcessRun] Git branch checkout failed for %s: %s', task.branchName, err.message);
         }
-        // Sync all agent worktrees to the task branch so Claude CLI agents see fresh code
         try {
           await this.#gitOps.syncAllWorktrees(task.branchName, this.#workDir);
         } catch (err) {

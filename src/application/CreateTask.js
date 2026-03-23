@@ -26,8 +26,9 @@ export class CreateTask {
     const project = await this.#projectRepo.findById(projectId);
     if (!project) throw new ProjectNotFoundError(projectId);
 
-    // Validate analyst role exists (needed for non-backlog tasks)
-    this.#roleRegistry.get('analyst');
+    // Validate analyst/implementer role exists (needed for non-backlog tasks)
+    const analystRole = this.#roleRegistry.has('implementer') ? 'implementer' : 'analyst';
+    this.#roleRegistry.get(analystRole);
 
     const task = await this.#taskService.createTask({
       projectId,
@@ -78,13 +79,20 @@ export class CreateTask {
       return { taskId: task.id, shortId, branchName: task.branchName, status: 'pending' };
     }
 
-    // Activated — enqueue analyst
-    const prompt = `Задача: ${task.shortId ?? ''} ${title}\n\n${description ?? ''}\n\nПроанализируй задачу и создай спецификацию.`;
+    // Activated — enqueue analyst phase
+    const prompt = `Фаза: analyst.
+
+Задача: ${task.shortId ?? ''} ${title}
+Ветка: ${task.branchName ?? 'не назначена'}
+
+${description ?? ''}
+
+Проанализируй задачу и создай спецификацию.`;
 
     await this.#runService.enqueue({
       taskId: task.id,
       stepId: null,
-      roleName: 'analyst',
+      roleName: analystRole,
       prompt,
       callbackUrl,
       callbackMeta,

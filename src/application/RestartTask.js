@@ -44,18 +44,19 @@ export class RestartTask {
       );
     }
 
-    // No terminal runs — start from scratch with analyst
+    // No terminal runs — start from scratch with analyst phase
     if (terminalRuns.length === 0) {
       const { RunService } = await import('../domain/services/RunService.js');
       const runService = new RunService({ runRepo: this.#runRepo });
+      const roleName = 'implementer'; // Pipeline v2: use implementer
       await runService.enqueue({
         taskId,
-        roleName: 'analyst',
-        prompt: `Исследуй и спроектируй задачу: ${task.title}\n\n${task.description || ''}`,
+        roleName,
+        prompt: `Фаза: analyst.\n\nИсследуй и спроектируй задачу: ${task.title}\n\n${task.description || ''}`,
         callbackUrl: task.callbackUrl,
         callbackMeta: task.callbackMeta,
       });
-      return { taskId, shortId, status: 'in_progress', decision: { action: 'spawn_run', role: 'analyst' } };
+      return { taskId, shortId, status: 'in_progress', decision: { action: 'spawn_run', role: roleName } };
     }
 
     // Let manager decide next step based on run history
