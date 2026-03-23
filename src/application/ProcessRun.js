@@ -53,6 +53,16 @@ export class ProcessRun {
       // Find or create session record (atomic upsert)
       const session = await this.#sessionRepo.findOrCreate(projectId, run.roleName);
 
+      // Developer resumes analyst session (shared context — files already read)
+      if (run.roleName === 'developer' && !session.cliSessionId) {
+        const analystSession = await this.#sessionRepo.findByProjectAndRole(projectId, 'analyst');
+        if (analystSession?.cliSessionId) {
+          session.cliSessionId = analystSession.cliSessionId;
+          await this.#sessionRepo.save(session);
+          this.#logger.info('[ProcessRun] Developer inheriting analyst session: %s', analystSession.cliSessionId);
+        }
+      }
+
       // Bind session to run before executing
       run.sessionId = session.id;
       await this.#runRepo.save(run);
@@ -106,8 +116,11 @@ export class ProcessRun {
         await this.#sessionRepo.save(session);
       }
 
-      // Complete the run (RunService re-loads from DB, so the running status from takeNext is fine)
-      await this.#runService.complete(run.id, result.response);
+      // Complete the run with usage stats
+      const usage = result.usage
+        ? { ...result.usage, cost_usd: result.costUsd ?? null }
+        : null;
+      await this.#runService.complete(run.id, result.response, usage);
 
       if (run.callbackUrl) {
         await this.#callbackSender.send(

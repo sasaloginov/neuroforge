@@ -543,7 +543,7 @@ describe('buildManagerPrompt', () => {
     expect(prompt).toContain('Build API');
     expect(prompt).toContain('REST endpoints');
     expect(prompt).toContain('Ветка: TP-1/build-api');
-    expect(prompt).toContain('Режим: full');
+    expect(prompt).toContain('Режим: auto');
     expect(prompt).toContain('[analyst] status=done');
     expect(prompt).toContain('Analysis done');
     expect(prompt).toContain('[developer] status=failed');
@@ -668,11 +668,12 @@ describe('ManagerDecision — review severity handling', () => {
 
     expect(result.action).toBe('revision_cycle');
     expect(taskService.incrementRevision).toHaveBeenCalledWith('task-1');
-    // Developer fix run enqueued
+    // Developer fix enqueued with ALL findings (blocking + minor)
+    expect(runService.enqueue).toHaveBeenCalledTimes(1);
     expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({ roleName: 'developer' }));
-    // Only reviewer-architecture re-review (not security, which had no blocking issues)
-    expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({ roleName: 'reviewer-architecture' }));
-    expect(runService.enqueue).not.toHaveBeenCalledWith(expect.objectContaining({ roleName: 'reviewer-security' }));
+    const prompt = runService.enqueue.mock.calls[0][0].prompt;
+    expect(prompt).toContain('DDD layer violation');
+    expect(prompt).toContain('rate limit');
     // Progress callback sent
     expect(callbackSender.send).toHaveBeenCalledWith(
       'https://example.com/cb',
@@ -704,7 +705,7 @@ describe('ManagerDecision — review severity handling', () => {
     expect(runService.enqueue).not.toHaveBeenCalled();
   });
 
-  it('sends tech_debt callback for minor-only findings and continues to LLM', async () => {
+  it('triggers revision cycle for minor-only findings too', async () => {
     runRepo.findById.mockResolvedValue({ id: 'run-rev', taskId: 'task-1', status: 'done' });
     runRepo.findByTaskId.mockResolvedValue([
       { id: 'run-dev', roleName: 'developer', status: 'done', response: 'Code', createdAt: t0 },
@@ -713,15 +714,10 @@ describe('ManagerDecision — review severity handling', () => {
 
     const result = await managerDecision.execute({ completedRunId: 'run-rev' });
 
-    // tech_debt callback sent
-    expect(callbackSender.send).toHaveBeenCalledWith(
-      'https://example.com/cb',
-      expect.objectContaining({ type: 'tech_debt', taskId: 'task-1' }),
-      { chatId: 1 },
-    );
-    // Manager LLM still called (returns spawn_run tester from mock)
-    expect(chatEngine.runPrompt).toHaveBeenCalled();
-    expect(result.action).toBe('spawn_run');
+    expect(result.action).toBe('revision_cycle');
+    expect(runService.enqueue).toHaveBeenCalledTimes(1);
+    expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({ roleName: 'developer' }));
+    expect(chatEngine.runPrompt).not.toHaveBeenCalled();
   });
 
   it('falls through to LLM when no reviewer runs after last dev run', async () => {
@@ -773,12 +769,12 @@ describe('ManagerDecision — review severity handling', () => {
     const result = await managerDecision.execute({ completedRunId: 'run-rev' });
 
     expect(result.action).toBe('revision_cycle');
-    expect(result.details.reviewersWithBlockingIssues).toEqual(
-      expect.arrayContaining(['reviewer-architecture', 'reviewer-security']),
+    expect(result.details.reviewersWithIssues).toEqual(
+      expect.arrayContaining(['reviewer-architecture', 'reviewer-security', 'reviewer-business']),
     );
-    expect(result.details.reviewersWithBlockingIssues).not.toContain('reviewer-business');
-    // 3 enqueue calls: developer + 2 reviewers with blocking
-    expect(runService.enqueue).toHaveBeenCalledTimes(3);
+    // Only developer fix enqueued (re-review happens after dev fix completes)
+    expect(runService.enqueue).toHaveBeenCalledTimes(1);
+    expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({ roleName: 'developer' }));
   });
 
   it('does not send tech_debt callback when callbackUrl is null', async () => {
@@ -789,15 +785,12 @@ describe('ManagerDecision — review severity handling', () => {
       { id: 'run-rev', roleName: 'reviewer-architecture', status: 'done', response: '[MINOR] Nit\nPASS', createdAt: t1 },
     ]);
 
-    await managerDecision.execute({ completedRunId: 'run-rev' });
+    const result = await managerDecision.execute({ completedRunId: 'run-rev' });
 
-    // No callback sent (url is null), but LLM still called
-    expect(callbackSender.send).not.toHaveBeenCalledWith(
-      null,
-      expect.anything(),
-      expect.anything(),
-    );
-    expect(chatEngine.runPrompt).toHaveBeenCalled();
+    // MINOR triggers revision cycle, but no callback sent (url is null)
+    expect(result.action).toBe('revision_cycle');
+    expect(callbackSender.send).not.toHaveBeenCalled();
+    expect(chatEngine.runPrompt).not.toHaveBeenCalled();
   });
 
   it('does not send escalation callback when callbackUrl is null', async () => {
@@ -840,6 +833,89 @@ describe('ManagerDecision — review severity handling', () => {
     const result = await managerDecision.execute({ completedRunId: 'run-rev2' });
 
     // Old reviewer run before dev run is ignored. New review says PASS → falls through to LLM
+    expect(chatEngine.runPrompt).toHaveBeenCalled();
+  });
+});
+
+describe('ManagerDecision — dev fix complete (re-review scheduling)', () => {
+  let managerDecision;
+  let runService;
+  let taskService;
+  let chatEngine;
+  let roleRegistry;
+  let callbackSender;
+  let runRepo;
+
+  const t0 = new Date('2026-01-01T00:00:00Z');
+  const t1 = new Date('2026-01-01T00:01:00Z');
+  const t2 = new Date('2026-01-01T00:02:00Z');
+  const t3 = new Date('2026-01-01T00:03:00Z');
+
+  const makeTask = (overrides = {}) => ({
+    id: 'task-1', title: 'Test', description: 'Desc', status: 'in_progress',
+    callbackUrl: 'https://example.com/cb', callbackMeta: { chatId: 1 },
+    revisionCount: 1, mode: 'full', ...overrides,
+  });
+
+  beforeEach(() => {
+    runService = { enqueue: vi.fn().mockResolvedValue({}) };
+    taskService = {
+      getTask: vi.fn().mockResolvedValue(makeTask()),
+      incrementRevision: vi.fn().mockResolvedValue(undefined),
+      completeTask: vi.fn().mockResolvedValue(undefined),
+      failTask: vi.fn().mockResolvedValue(undefined),
+    };
+    chatEngine = {
+      runPrompt: vi.fn().mockResolvedValue({ response: '{"action":"complete_task","summary":"done"}' }),
+    };
+    roleRegistry = { get: vi.fn().mockReturnValue({ name: 'manager', timeoutMs: 600000 }) };
+    callbackSender = { send: vi.fn().mockResolvedValue({ ok: true }) };
+    runRepo = { findById: vi.fn(), findByTaskId: vi.fn() };
+
+    managerDecision = new ManagerDecision({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo });
+  });
+
+  it('enqueues re-review after developer fix completes', async () => {
+    runRepo.findById.mockResolvedValue({ id: 'run-dev-fix', taskId: 'task-1', status: 'done' });
+    runRepo.findByTaskId.mockResolvedValue([
+      { id: 'run-dev-1', roleName: 'developer', status: 'done', response: 'Code', createdAt: t0 },
+      { id: 'run-rev-arch', roleName: 'reviewer-architecture', status: 'done', response: '[MAJOR] DDD violation\nFAIL', createdAt: t1 },
+      { id: 'run-rev-sec', roleName: 'reviewer-security', status: 'done', response: 'PASS', createdAt: t1 },
+      { id: 'run-dev-fix', roleName: 'developer', status: 'done', response: 'Fixed', createdAt: t2 },
+    ]);
+
+    const result = await managerDecision.execute({ completedRunId: 'run-dev-fix' });
+
+    expect(result.action).toBe('re_review_after_fix');
+    // Only reviewer-architecture (had blocking), not reviewer-security (PASS)
+    expect(runService.enqueue).toHaveBeenCalledTimes(1);
+    expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({ roleName: 'reviewer-architecture' }));
+    expect(chatEngine.runPrompt).not.toHaveBeenCalled();
+  });
+
+  it('skips when revisionCount is 0', async () => {
+    taskService.getTask.mockResolvedValue(makeTask({ revisionCount: 0 }));
+    runRepo.findById.mockResolvedValue({ id: 'run-dev', taskId: 'task-1', status: 'done' });
+    runRepo.findByTaskId.mockResolvedValue([
+      { id: 'run-dev', roleName: 'developer', status: 'done', response: 'Code', createdAt: t0 },
+    ]);
+
+    const result = await managerDecision.execute({ completedRunId: 'run-dev' });
+
+    // Falls through to LLM
+    expect(chatEngine.runPrompt).toHaveBeenCalled();
+  });
+
+  it('skips when last run is not developer', async () => {
+    runRepo.findById.mockResolvedValue({ id: 'run-rev', taskId: 'task-1', status: 'done' });
+    runRepo.findByTaskId.mockResolvedValue([
+      { id: 'run-dev', roleName: 'developer', status: 'done', response: 'Code', createdAt: t0 },
+      { id: 'run-rev', roleName: 'reviewer-architecture', status: 'done', response: 'PASS\nNo findings', createdAt: t1 },
+    ]);
+
+    const result = await managerDecision.execute({ completedRunId: 'run-rev' });
+
+    // No findings, no revision needed → falls through to LLM
     expect(chatEngine.runPrompt).toHaveBeenCalled();
   });
 });

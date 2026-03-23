@@ -40,7 +40,7 @@ export class Task {
     this.seqNumber = seqNumber ?? null;
     this.projectPrefix = projectPrefix ?? null;
     this.branchName = branchName ?? null;
-    this.mode = mode ?? 'full';
+    this.mode = mode ?? 'auto';
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
   }
@@ -53,9 +53,9 @@ export class Task {
   }
 
   static create({ projectId, title, description, callbackUrl, callbackMeta, seqNumber, status, mode }) {
-    const validatedMode = mode ?? 'full';
+    const validatedMode = mode ?? 'auto';
     if (!isValidMode(validatedMode)) {
-      throw new Error(`Invalid task mode: ${validatedMode}. Allowed: full, research`);
+      throw new Error(`Invalid task mode: ${validatedMode}. Allowed: full, research, auto`);
     }
     const initialStatus = status === STATUSES.BACKLOG ? STATUSES.BACKLOG : STATUSES.PENDING;
     const now = new Date();
@@ -106,7 +106,7 @@ export class Task {
       seqNumber: row.seq_number ?? null,
       projectPrefix: row.project_prefix ?? null,
       branchName: row.branch_name ?? null,
-      mode: row.mode ?? 'full',
+      mode: row.mode ?? 'auto',
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });

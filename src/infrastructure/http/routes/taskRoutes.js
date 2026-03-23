@@ -1,4 +1,7 @@
 import { assertProjectScope } from '../scopeHelpers.js';
+import { TaskMode } from '../../../domain/valueObjects/TaskMode.js';
+
+const validModes = Object.values(TaskMode);
 
 const createTaskSchema = {
   body: {
@@ -11,7 +14,7 @@ const createTaskSchema = {
       callbackUrl: { type: 'string', format: 'uri', maxLength: 512 },
       callbackMeta: { type: 'object' },
       status: { type: 'string', enum: ['backlog'] },
-      mode: { type: 'string', enum: ['full', 'research'], default: 'full' },
+      mode: { type: 'string', enum: validModes, default: 'auto' },
     },
     additionalProperties: false,
   },

@@ -1,6 +1,7 @@
 const MODES = {
   FULL: 'full',
   RESEARCH: 'research',
+  AUTO: 'auto',
 };
 
 function isValidMode(mode) {

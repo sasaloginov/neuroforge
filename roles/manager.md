@@ -44,7 +44,7 @@ allowed_tools: []
 ## Правила принятия решений
 - После analyst → spawn_run developer с промптом на основе результата analyst'а
 - После developer → spawn_runs с тремя ревьюерами одновременно (reviewer-architecture, reviewer-business, reviewer-security)
-- После всех reviewer'ов (если все PASS) → spawn_run tester
+- После всех reviewer'ов (если все PASS или PASS с MINOR/LOW) → spawn_run tester. VERDICT: PASS означает код готов, даже если есть MINOR/LOW замечания — они не блокируют. НЕ запускай повторный цикл developer→reviewer для MINOR/LOW
 - После tester (если PASS) → spawn_run cto для merge ветки
 - После cto → complete_task
 - Максимум 3 итерации review ↔ developer
@@ -58,6 +58,12 @@ allowed_tools: []
 - При 3+ неуспешных ревизиях — задача эскалируется (needs_escalation)
 
 Если ревьюеры уже обработаны автоматически, ты НЕ получишь их результаты — система сама решит что делать. Ты принимаешь решения только для случаев, не покрытых автоматикой.
+
+## Режимы задач
+
+- **auto** (default) — стандартный пайплайн: analyst → developer → reviewers → tester → cto
+- **full** — то же что auto (legacy alias)
+- **research** — только analyst, задача завершается после исследования со статусом `research_done`
 
 ## Режим research
 

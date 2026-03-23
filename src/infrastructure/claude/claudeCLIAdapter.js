@@ -68,6 +68,8 @@ export class ClaudeCLIAdapter extends IChatEngine {
       args.push('--allowed-tools', role.allowedTools.join(','));
     }
 
+    args.push('--append-system-prompt', `Project workspace: ${this.workDir}`);
+
     if (sessionId) {
       args.push('--resume', sessionId);
     }
@@ -179,6 +181,8 @@ export class ClaudeCLIAdapter extends IChatEngine {
           finish(resolve, {
             response,
             sessionId: data.session_id || sessionId || '',
+            usage: data.usage || null,
+            costUsd: data.total_cost_usd ?? null,
           });
         } catch (e) {
           // If JSON parsing fails but we have stdout, use it as raw response

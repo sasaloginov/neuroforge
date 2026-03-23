@@ -167,14 +167,24 @@ describe('Task', () => {
       expect(task.branchName).toBeNull();
     });
 
-    it('mode defaults to full on create', () => {
+    it('mode defaults to auto on create', () => {
       const task = Task.create(defaults);
-      expect(task.mode).toBe('full');
+      expect(task.mode).toBe('auto');
     });
 
     it('create accepts mode: research', () => {
       const task = Task.create({ ...defaults, mode: 'research' });
       expect(task.mode).toBe('research');
+    });
+
+    it('create accepts mode: full', () => {
+      const task = Task.create({ ...defaults, mode: 'full' });
+      expect(task.mode).toBe('full');
+    });
+
+    it('create accepts mode: auto', () => {
+      const task = Task.create({ ...defaults, mode: 'auto' });
+      expect(task.mode).toBe('auto');
     });
 
     it('create rejects invalid mode', () => {
@@ -189,12 +199,12 @@ describe('Task', () => {
       expect(restored.mode).toBe('research');
     });
 
-    it('fromRow defaults mode to full when absent', () => {
+    it('fromRow defaults mode to auto when absent', () => {
       const task = Task.create(defaults);
       const row = task.toRow();
       delete row.mode;
       const restored = Task.fromRow(row);
-      expect(restored.mode).toBe('full');
+      expect(restored.mode).toBe('auto');
     });
 
     it('supports backlog initial status', () => {

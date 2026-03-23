@@ -56,9 +56,9 @@ describe('TaskService', () => {
     expect(savedTask.mode).toBe('research');
   });
 
-  it('defaults mode to full when not specified', async () => {
+  it('defaults mode to auto when not specified', async () => {
     const task = await service.createTask({ projectId: 'p-1', title: 'Test' });
-    expect(task.mode).toBe('full');
+    expect(task.mode).toBe('auto');
   });
 
   it('passes callbackMeta to created task', async () => {

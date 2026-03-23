@@ -12,17 +12,19 @@ export class ManagerDecision {
   #roleRegistry;
   #callbackSender;
   #runRepo;
+  #sessionRepo;
   #logger;
 
   #startNextPendingTask;
 
-  constructor({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, logger, startNextPendingTask }) {
+  constructor({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, sessionRepo, logger, startNextPendingTask }) {
     this.#runService = runService;
     this.#taskService = taskService;
     this.#chatEngine = chatEngine;
     this.#roleRegistry = roleRegistry;
     this.#callbackSender = callbackSender;
     this.#runRepo = runRepo;
+    this.#sessionRepo = sessionRepo || null;
     this.#logger = logger || console;
     this.#startNextPendingTask = startNextPendingTask || null;
   }
@@ -57,19 +59,41 @@ export class ManagerDecision {
       return researchResult;
     }
 
+    // After developer fix — enqueue re-review for reviewers that had blocking issues
+    const devFixResult = await this.#handleDevFixComplete(task, allRuns);
+    if (devFixResult) {
+      return devFixResult;
+    }
+
     // Automatic review severity handling (before calling manager LLM)
     const reviewResult = await this.#handleReviewFindings(task, allRuns);
     if (reviewResult) {
       return reviewResult;
     }
 
-    // Build manager prompt and run manager agent
+    // Build manager prompt and run manager agent (with --resume for context accumulation)
     const managerPrompt = buildManagerPrompt(task, allRuns);
 
     let result;
+    let managerSession = null;
     try {
       const role = this.#roleRegistry.get('manager');
-      result = await this.#chatEngine.runPrompt('manager', managerPrompt, { timeoutMs: role.timeoutMs });
+
+      // Find or create manager session for this project (enables --resume)
+      if (this.#sessionRepo) {
+        managerSession = await this.#sessionRepo.findOrCreate(task.projectId, 'manager');
+      }
+
+      result = await this.#chatEngine.runPrompt('manager', managerPrompt, {
+        timeoutMs: role.timeoutMs,
+        sessionId: managerSession?.cliSessionId || null,
+      });
+
+      // Save manager session for next --resume
+      if (this.#sessionRepo && managerSession && result.sessionId && result.sessionId !== managerSession.cliSessionId) {
+        managerSession.cliSessionId = result.sessionId;
+        await this.#sessionRepo.save(managerSession);
+      }
     } catch (error) {
       await this.#taskService.failTask(task.id);
       if (task.callbackUrl) {
@@ -320,6 +344,65 @@ export class ManagerDecision {
   }
 
   /**
+   * After developer fix completes — enqueue re-review for reviewers
+   * that had blocking issues in the previous round.
+   *
+   * Triggers when: last completed run is developer, revisionCount > 0,
+   * and previous reviewer round had blocking findings.
+   */
+  async #handleDevFixComplete(task, allRuns) {
+    if (task.revisionCount === 0) return null;
+
+    const completedRuns = allRuns
+      .filter(r => ['done', 'failed', 'timeout', 'interrupted'].includes(r.status))
+      .sort((a, b) => a.createdAt - b.createdAt);
+
+    // Only trigger if the last completed run is developer
+    const lastRun = completedRuns[completedRuns.length - 1];
+    if (!lastRun || lastRun.roleName !== 'developer') return null;
+
+    // Find the previous developer run (the one before the fix)
+    const prevDevRun = [...completedRuns]
+      .reverse()
+      .find(r => r.roleName === 'developer' && r.id !== lastRun.id);
+
+    // Find reviewer runs from the round between prev dev and this fix
+    const reviewerRuns = completedRuns.filter(
+      r => REVIEWER_ROLES.includes(r.roleName)
+        && r.status === 'done'
+        && (prevDevRun ? r.createdAt > prevDevRun.createdAt : true)
+        && r.createdAt < lastRun.createdAt,
+    );
+
+    if (reviewerRuns.length === 0) return null;
+
+    const { reviewersWithIssues } =
+      ReviewFindings.parseAll(reviewerRuns);
+
+    if (reviewersWithIssues.length === 0) return null;
+
+    // Enqueue re-review for reviewers that had any findings
+    const reReviewPrompt = buildReReviewPrompt(task);
+    for (const reviewerRole of reviewersWithIssues) {
+      await this.#runService.enqueue({
+        taskId: task.id,
+        stepId: null,
+        roleName: reviewerRole,
+        prompt: reReviewPrompt,
+        callbackUrl: task.callbackUrl,
+        callbackMeta: task.callbackMeta,
+      });
+    }
+
+    this.#logger.info('[ManagerDecision] Dev fix complete, enqueued re-review for: %s', reviewersWithIssues.join(', '));
+
+    return {
+      action: 're_review_after_fix',
+      details: { reviewersWithIssues },
+    };
+  }
+
+  /**
    * Automatic review severity handling.
    * Analyzes review findings after the last developer run and decides:
    * - blocking + over revision limit → escalate
@@ -348,27 +431,11 @@ export class ManagerDecision {
     );
     if (reviewerRuns.length === 0) return null;
 
-    const { blockingFindings, minorFindings, reviewersWithBlockingIssues, hasBlockingIssues } =
+    const { blockingFindings, minorFindings, reviewersWithIssues, hasBlockingIssues } =
       ReviewFindings.parseAll(reviewerRuns);
 
-    // Only minor findings → send tech_debt callback, let LLM decide next step
-    if (!hasBlockingIssues && minorFindings.length > 0) {
-      if (task.callbackUrl) {
-        await this.#callbackSender.send(
-          task.callbackUrl,
-          {
-            type: 'tech_debt',
-            taskId: task.id,
-            shortId: task.shortId,
-            findings: minorFindings,
-          },
-          task.callbackMeta,
-        );
-      }
-      return null; // continue to manager LLM
-    }
-
-    if (!hasBlockingIssues) return null;
+    const actionableFindings = [...blockingFindings, ...minorFindings.filter(f => f.severity !== 'LOW')];
+    if (actionableFindings.length === 0) return null;
 
     // Blocking findings found — check revision limit
     if (task.revisionCount >= MAX_REVIEW_REVISIONS) {
@@ -389,10 +456,11 @@ export class ManagerDecision {
       return { action: 'needs_escalation', details: { findings: blockingFindings, revisionCount: task.revisionCount } };
     }
 
-    // Under revision limit — enqueue developer fix + targeted re-review
+    // Under revision limit — enqueue developer fix ONLY.
+    // Re-review will be enqueued after developer completes (see #handleDevFixComplete).
     await this.#taskService.incrementRevision(task.id);
 
-    const fixPrompt = buildFixPrompt(task, blockingFindings);
+    const fixPrompt = buildFixPrompt(task, actionableFindings);
     await this.#runService.enqueue({
       taskId: task.id,
       stepId: null,
@@ -402,19 +470,6 @@ export class ManagerDecision {
       callbackMeta: task.callbackMeta,
     });
 
-    // Enqueue re-review only for reviewers that found blocking issues
-    const reReviewPrompt = buildReReviewPrompt(task);
-    for (const reviewerRole of reviewersWithBlockingIssues) {
-      await this.#runService.enqueue({
-        taskId: task.id,
-        stepId: null,
-        roleName: reviewerRole,
-        prompt: reReviewPrompt,
-        callbackUrl: task.callbackUrl,
-        callbackMeta: task.callbackMeta,
-      });
-    }
-
     if (task.callbackUrl) {
       await this.#callbackSender.send(
         task.callbackUrl,
@@ -423,7 +478,7 @@ export class ManagerDecision {
           taskId: task.id,
           shortId: task.shortId,
           stage: 'revision',
-          message: `Ревизия ${task.revisionCount + 1}: исправление ${blockingFindings.length} blocking замечаний`,
+          message: `Ревизия ${task.revisionCount + 1}: исправление ${actionableFindings.length} замечаний`,
         },
         task.callbackMeta,
       );
@@ -432,8 +487,8 @@ export class ManagerDecision {
     return {
       action: 'revision_cycle',
       details: {
-        blockingFindings,
-        reviewersWithBlockingIssues,
+        findings: actionableFindings,
+        reviewersWithIssues,
         revisionCount: task.revisionCount,
       },
     };
@@ -455,7 +510,7 @@ function buildManagerPrompt(task, runs) {
   return `Задача: ${task.title}
 Описание: ${task.description ?? 'нет'}
 Ветка: ${task.branchName ?? 'не назначена'}
-Режим: ${task.mode ?? 'full'}
+Режим: ${task.mode ?? 'auto'}
 Текущий статус: ${task.status}
 Количество ревизий: ${task.revisionCount}
 
@@ -522,19 +577,28 @@ function parseManagerDecision(response) {
 /**
  * Build a prompt for the developer to fix blocking review findings.
  */
-function buildFixPrompt(task, blockingFindings) {
-  const findingsList = blockingFindings
+function buildFixPrompt(task, findings) {
+  const blocking = findings.filter(f => ['CRITICAL', 'MAJOR', 'HIGH'].includes(f.severity));
+  const minor = findings.filter(f => ['MINOR', 'LOW'].includes(f.severity));
+
+  const formatList = (items) => items
     .map((f, i) => `${i + 1}. [${f.severity}] ${f.description}${f.reviewerRole ? ` (${f.reviewerRole})` : ''}`)
     .join('\n');
 
-  return `Задача: ${task.title}
+  let prompt = `Задача: ${task.title}
 Описание: ${task.description ?? 'нет'}
 
-Ревьюеры обнаружили следующие blocking замечания, которые необходимо исправить:
+Ревьюеры обнаружили замечания, которые необходимо исправить:`;
 
-${findingsList}
+  if (blocking.length > 0) {
+    prompt += `\n\nBlocking (обязательно исправить):\n${formatList(blocking)}`;
+  }
+  if (minor.length > 0) {
+    prompt += `\n\nMinor (исправить если возможно):\n${formatList(minor)}`;
+  }
 
-Исправь ВСЕ перечисленные замечания. Не ломай существующую функциональность. После исправлений убедись что тесты проходят.`;
+  prompt += '\n\nИсправь ВСЕ перечисленные замечания. Не ломай существующую функциональность. После исправлений убедись что тесты проходят.';
+  return prompt;
 }
 
 /**
