@@ -56,7 +56,7 @@ result = await this.#chatEngine.runPrompt(run.roleName, enrichedPrompt, {
 | `src/domain/services/RunService.js` | Domain Service | Добавить `cancel(runId)` метод |
 | `src/application/CancelTask.js` | Use Case | Обработка running runs + abort через реестр |
 | `src/application/ProcessRun.js` | Use Case | Создание AbortController, регистрация, передача signal |
-| **Новый:** `src/domain/services/RunAbortRegistry.js` | Domain Service | Map<runId, AbortController> — in-memory реестр |
+| **Новый:** `src/application/RunAbortRegistry.js` | Application Service | Map<runId, AbortController> — in-memory реестр |
 | `src/index.js` | Composition Root | **Критичный файл.** Создание RunAbortRegistry, передача в ProcessRun и CancelTask |
 
 ## Зависимости (data flow)

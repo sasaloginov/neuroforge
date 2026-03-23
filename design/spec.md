@@ -20,10 +20,10 @@ graph TB
     subgraph Application Layer
         CT[CancelTask]
         PR[ProcessRun]
+        RAR[RunAbortRegistry]
     end
 
     subgraph Domain Layer
-        RAR[RunAbortRegistry]
         RS[RunService]
         RE[Run Entity]
     end
@@ -116,9 +116,9 @@ cancel() {
 }
 ```
 
-#### 1.2. НОВЫЙ: `src/domain/services/RunAbortRegistry.js`
+#### 1.2. НОВЫЙ: `src/application/RunAbortRegistry.js`
 
-In-memory реестр AbortController-ов. Не зависит от инфраструктуры — чистый domain сервис.
+In-memory реестр AbortController-ов. Координация runtime-процессов — application-level сервис.
 
 ```javascript
 export class RunAbortRegistry {
@@ -285,7 +285,7 @@ async execute({ taskId }) {
 
 ```javascript
 // Импорт (добавить)
-import { RunAbortRegistry } from './domain/services/RunAbortRegistry.js';
+import { RunAbortRegistry } from './application/RunAbortRegistry.js';
 
 // После создания domain services (секция 6)
 const runAbortRegistry = new RunAbortRegistry();
@@ -385,7 +385,7 @@ for (const run of runningRuns) {
 
 ## Тесты
 
-### Unit: `src/domain/services/RunAbortRegistry.test.js` (НОВЫЙ)
+### Unit: `src/application/RunAbortRegistry.test.js` (НОВЫЙ)
 
 ```
 ✓ register + abort — вызывает controller.abort(), возвращает true
