@@ -23,6 +23,12 @@ export class GitCLIAdapter extends IGitOps {
     if (exists) {
       await this.#exec(['checkout', branchName], workDir);
       this.#logger.info('[GitCLIAdapter] Checked out existing branch: %s', branchName);
+      try {
+        await this.#exec(['pull', '--ff-only'], workDir);
+        this.#logger.info('[GitCLIAdapter] Pulled latest commits for branch: %s', branchName);
+      } catch (err) {
+        this.#logger.warn('[GitCLIAdapter] git pull failed (ignored): %s', err.message);
+      }
     } else {
       await this.#exec(['checkout', '-b', branchName], workDir);
       this.#logger.info('[GitCLIAdapter] Created and checked out branch: %s', branchName);
