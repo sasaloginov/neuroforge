@@ -44,8 +44,8 @@ export class PgRunRepo extends IRunRepo {
   async save(run) {
     const r = run.toRow();
     await this._getPool().query(
-      `INSERT INTO runs (id, session_id, task_id, step_id, role_name, prompt, response, status, callback_url, callback_meta, started_at, finished_at, duration_ms, error, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+      `INSERT INTO runs (id, session_id, task_id, step_id, role_name, prompt, response, status, callback_url, callback_meta, started_at, finished_at, duration_ms, error, usage, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        ON CONFLICT (id) DO UPDATE SET
          session_id = EXCLUDED.session_id,
          task_id = EXCLUDED.task_id,
@@ -59,11 +59,13 @@ export class PgRunRepo extends IRunRepo {
          started_at = EXCLUDED.started_at,
          finished_at = EXCLUDED.finished_at,
          duration_ms = EXCLUDED.duration_ms,
-         error = EXCLUDED.error`,
+         error = EXCLUDED.error,
+         usage = EXCLUDED.usage`,
       [r.id, r.session_id, r.task_id, r.step_id, r.role_name, r.prompt,
        r.response, r.status, r.callback_url,
        r.callback_meta ? JSON.stringify(r.callback_meta) : null,
-       r.started_at, r.finished_at, r.duration_ms, r.error, r.created_at],
+       r.started_at, r.finished_at, r.duration_ms, r.error,
+       r.usage ? JSON.stringify(r.usage) : null, r.created_at],
     );
   }
 

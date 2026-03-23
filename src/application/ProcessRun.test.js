@@ -73,7 +73,7 @@ describe('ProcessRun', () => {
       runId: 'run-1',
       taskId: 'task-1',
     }));
-    expect(runService.complete).toHaveBeenCalledWith('run-1', 'Analysis result');
+    expect(runService.complete).toHaveBeenCalledWith('run-1', 'Analysis result', null);
     expect(callbackSender.send).toHaveBeenCalledWith(
       'https://example.com/cb',
       expect.objectContaining({ type: 'progress', taskId: 'task-1', stage: 'analyst' }),

@@ -11,6 +11,8 @@
  * @typedef {Object} RunPromptResult
  * @property {string} response - agent's text response
  * @property {string} sessionId - CLI session ID (new or reused)
+ * @property {Object|null} usage - token usage stats (input_tokens, output_tokens, cache_read_input_tokens, etc.)
+ * @property {number|null} costUsd - total cost in USD
  */
 
 /**

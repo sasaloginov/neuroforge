@@ -21,9 +21,9 @@ export class RunService {
     return run;
   }
 
-  async complete(runId, response) {
+  async complete(runId, response, usage) {
     const run = await this.#getRun(runId);
-    run.complete(response);
+    run.complete(response, usage);
     await this.#runRepo.save(run);
     return run;
   }

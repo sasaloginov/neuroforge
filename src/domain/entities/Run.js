@@ -23,7 +23,7 @@ const TRANSITIONS = {
 export class Run {
   static STATUSES = STATUSES;
 
-  constructor({ id, sessionId, taskId, stepId, roleName, prompt, response, status, callbackUrl, callbackMeta, startedAt, finishedAt, durationMs, error, createdAt }) {
+  constructor({ id, sessionId, taskId, stepId, roleName, prompt, response, status, callbackUrl, callbackMeta, startedAt, finishedAt, durationMs, error, usage, createdAt }) {
     this.id = id;
     this.sessionId = sessionId ?? null;
     this.taskId = taskId ?? null;
@@ -38,6 +38,7 @@ export class Run {
     this.finishedAt = finishedAt ?? null;
     this.durationMs = durationMs ?? null;
     this.error = error ?? null;
+    this.usage = usage ?? null;
     this.createdAt = createdAt;
   }
 
@@ -79,9 +80,10 @@ export class Run {
     this.startedAt = new Date();
   }
 
-  complete(response) {
+  complete(response, usage) {
     this.transitionTo(STATUSES.DONE);
     this.response = response;
+    this.usage = usage ?? null;
     this.finishedAt = new Date();
     this.durationMs = this.finishedAt - this.startedAt;
   }
@@ -127,6 +129,7 @@ export class Run {
       finishedAt: row.finished_at,
       durationMs: row.duration_ms,
       error: row.error,
+      usage: row.usage ?? null,
       createdAt: row.created_at,
     });
   }
@@ -147,6 +150,7 @@ export class Run {
       finished_at: this.finishedAt,
       duration_ms: this.durationMs,
       error: this.error,
+      usage: this.usage,
       created_at: this.createdAt,
     };
   }

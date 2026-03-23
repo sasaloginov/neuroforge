@@ -106,8 +106,11 @@ export class ProcessRun {
         await this.#sessionRepo.save(session);
       }
 
-      // Complete the run (RunService re-loads from DB, so the running status from takeNext is fine)
-      await this.#runService.complete(run.id, result.response);
+      // Complete the run with usage stats
+      const usage = result.usage
+        ? { ...result.usage, cost_usd: result.costUsd ?? null }
+        : null;
+      await this.#runService.complete(run.id, result.response, usage);
 
       if (run.callbackUrl) {
         await this.#callbackSender.send(
