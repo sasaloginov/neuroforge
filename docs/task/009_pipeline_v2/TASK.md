@@ -111,12 +111,52 @@ PM (sonnet, --resume)
 - [ ] Developer role definition включает: "Напиши тесты, запусти, убедись что проходят"
 - [ ] Все существующие тесты проходят без tester/cto ролей
 
-### Обратная совместимость
+### Обратная совместимость и сохранение логики
+
+Рефакторинг затрагивает ТОЛЬКО пайплайн (кто запускается, как передаётся контекст). Вся бизнес-логика, API, фичи — сохраняются без изменений:
+
+**API и callbacks:**
 - [ ] API POST /tasks не меняется (те же параметры)
-- [ ] Callbacks работают (progress, done, failed, needs_escalation)
-- [ ] Research mode работает (analyst only → research_done)
-- [ ] Cancel task работает (abort running sessions)
-- [ ] Restart task работает
+- [ ] Callbacks работают: progress, done, failed, needs_escalation, question, tech_debt, research_done
+- [ ] Callback meta сохраняется на протяжении всего пайплайна
+
+**Режимы задач:**
+- [ ] Research mode: analyst only → research_done → resume → developer (mode переключается на full)
+- [ ] Auto/Full mode: полный пайплайн PM → analyst → developer → reviewer → merge
+- [ ] Валидация mode через isValidMode() (TaskMode value object)
+
+**Управление задачами:**
+- [ ] Cancel task: abort running sessions через RunAbortRegistry
+- [ ] Restart task: failed → in_progress, PM решает с какого шага продолжить
+- [ ] Reply to question: PM получает ответ владельца, возобновляет пайплайн
+- [ ] Task queue: один активный таск на проект, остальные pending (activateOldestPending)
+
+**Revision cycle:**
+- [ ] Reviewer findings парсятся через ReviewFindings (VERDICT + FINDINGS + SUMMARY)
+- [ ] Все findings кроме LOW передаются developer'у (CRITICAL → MINOR)
+- [ ] Developer fix → re-review (последовательно, не одновременно)
+- [ ] Макс 3 ревизии → escalation (needs_escalation)
+
+**Git:**
+- [ ] Ветка создаётся PM при старте задачи (generateBranchName)
+- [ ] Analyst коммитит research + spec + context.md
+- [ ] Developer коммитит код + тесты
+- [ ] Worktree sync для agent worktrees (syncAllWorktrees)
+
+**Артефакты analyst'а:**
+- [ ] research/<shortId>_<slug>.md — исследование
+- [ ] design/spec.md — спецификация
+- [ ] context.md — карта затрагиваемого кода (макс 150 строк)
+- [ ] PROJECT_MAP.md — обновляется если затронуты новые модули
+
+**Session management:**
+- [ ] Session per task+role (не project+role как сейчас)
+- [ ] cliSessionId сохраняется для --resume
+- [ ] StaleSessionError → retry без resume (уже реализовано)
+
+**Метрики:**
+- [ ] usage (input/output tokens, cache_read, cache_create, cost_usd) для каждого run
+- [ ] Сохраняется в runs.usage (jsonb)
 
 ### Метрики
 - [ ] usage (tokens, cost) сохраняется для каждого run
