@@ -26,15 +26,16 @@ export class PgSessionRepo extends ISessionRepo {
   async save(session) {
     const r = session.toRow();
     await getPool().query(
-      `INSERT INTO sessions (id, project_id, cli_session_id, role_name, status, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `INSERT INTO sessions (id, project_id, task_id, cli_session_id, role_name, status, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        ON CONFLICT (id) DO UPDATE SET
          project_id = EXCLUDED.project_id,
+         task_id = EXCLUDED.task_id,
          cli_session_id = EXCLUDED.cli_session_id,
          role_name = EXCLUDED.role_name,
          status = EXCLUDED.status,
          updated_at = EXCLUDED.updated_at`,
-      [r.id, r.project_id, r.cli_session_id, r.role_name, r.status, r.created_at, r.updated_at],
+      [r.id, r.project_id, r.task_id, r.cli_session_id, r.role_name, r.status, r.created_at, r.updated_at],
     );
   }
 
@@ -78,6 +79,56 @@ export class PgSessionRepo extends ISessionRepo {
       await pool.query('ROLLBACK');
       throw err;
     }
+  }
+
+  /** Atomically find or create an active session for task+role. */
+  async findOrCreateForTask(taskId, projectId, roleName) {
+    const pool = getPool();
+    const now = new Date();
+
+    await pool.query('BEGIN');
+    try {
+      const existing = await pool.query(
+        `SELECT * FROM sessions
+         WHERE task_id = $1 AND role_name = $2 AND status = 'active'
+         LIMIT 1
+         FOR UPDATE`,
+        [taskId, roleName],
+      );
+
+      let row;
+      if (existing.rows.length > 0) {
+        const { rows } = await pool.query(
+          `UPDATE sessions SET updated_at = $1 WHERE id = $2 RETURNING *`,
+          [now, existing.rows[0].id],
+        );
+        row = rows[0];
+      } else {
+        const id = crypto.randomUUID();
+        const { rows } = await pool.query(
+          `INSERT INTO sessions (id, project_id, task_id, cli_session_id, role_name, status, created_at, updated_at)
+           VALUES ($1, $2, $3, NULL, $4, 'active', $5, $6)
+           RETURNING *`,
+          [id, projectId, taskId, roleName, now, now],
+        );
+        row = rows[0];
+      }
+
+      await pool.query('COMMIT');
+      return Session.fromRow(row);
+    } catch (err) {
+      await pool.query('ROLLBACK');
+      throw err;
+    }
+  }
+
+  /** Find active session for task+role. */
+  async findByTaskAndRole(taskId, roleName) {
+    const { rows } = await getPool().query(
+      "SELECT * FROM sessions WHERE task_id = $1 AND role_name = $2 AND status = 'active' LIMIT 1",
+      [taskId, roleName],
+    );
+    return rows.length ? Session.fromRow(rows[0]) : null;
   }
 
   async delete(id) {

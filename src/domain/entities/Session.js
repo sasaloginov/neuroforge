@@ -15,9 +15,10 @@ const TRANSITIONS = {
 export class Session {
   static STATUSES = STATUSES;
 
-  constructor({ id, projectId, cliSessionId, roleName, status, createdAt, updatedAt }) {
+  constructor({ id, projectId, taskId, cliSessionId, roleName, status, createdAt, updatedAt }) {
     this.id = id;
     this.projectId = projectId;
+    this.taskId = taskId ?? null;
     this.cliSessionId = cliSessionId ?? null;
     this.roleName = roleName;
     this.status = status;
@@ -25,11 +26,12 @@ export class Session {
     this.updatedAt = updatedAt;
   }
 
-  static create({ projectId, roleName, cliSessionId }) {
+  static create({ projectId, taskId, roleName, cliSessionId }) {
     const now = new Date();
     return new Session({
       id: crypto.randomUUID(),
       projectId,
+      taskId: taskId ?? null,
       cliSessionId,
       roleName,
       status: STATUSES.ACTIVE,
@@ -63,6 +65,7 @@ export class Session {
     return new Session({
       id: row.id,
       projectId: row.project_id,
+      taskId: row.task_id ?? null,
       cliSessionId: row.cli_session_id,
       roleName: row.role_name,
       status: row.status,
@@ -75,6 +78,7 @@ export class Session {
     return {
       id: this.id,
       project_id: this.projectId,
+      task_id: this.taskId,
       cli_session_id: this.cliSessionId,
       role_name: this.roleName,
       status: this.status,
