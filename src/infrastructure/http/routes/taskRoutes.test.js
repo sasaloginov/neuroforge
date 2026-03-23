@@ -51,6 +51,9 @@ function buildUseCases(overrides = {}) {
     replyToQuestion: {
       execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
     },
+    resumeResearch: {
+      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
+    },
     cancelTask: {
       execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'cancelled', cancelledRuns: 1 }),
     },
@@ -397,6 +400,65 @@ describe('taskRoutes', () => {
       });
 
       expect(res.statusCode).toBe(400);
+    });
+  });
+
+  // POST /tasks/:id/resume
+  describe('POST /tasks/:id/resume', () => {
+    it('resumes task and returns 200 with instruction', async () => {
+      const { app: a, useCases } = setup();
+      app = a;
+      await app.ready();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/tasks/${TASK_ID}/resume`,
+        headers: authHeader(),
+        payload: { instruction: 'Передай в разработку' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().taskId).toBe(TASK_ID);
+      expect(useCases.resumeResearch.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskId: TASK_ID,
+          instruction: 'Передай в разработку',
+        }),
+      );
+    });
+
+    it('returns 400 when instruction is missing', async () => {
+      const { app: a } = setup();
+      app = a;
+      await app.ready();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/tasks/${TASK_ID}/resume`,
+        headers: authHeader(),
+        payload: {},
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('returns 409 when task is not research_done', async () => {
+      const { app: a } = setup({
+        resumeResearch: {
+          execute: vi.fn().mockRejectedValue(new InvalidStateError('Cannot resume task in status in_progress')),
+        },
+      });
+      app = a;
+      await app.ready();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/tasks/${TASK_ID}/resume`,
+        headers: authHeader(),
+        payload: { instruction: 'Go' },
+      });
+
+      expect(res.statusCode).toBe(409);
     });
   });
 

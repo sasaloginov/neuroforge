@@ -74,6 +74,36 @@ describe('Task', () => {
       expect(() => task.transitionTo('done')).toThrow(InvalidTransitionError);
     });
 
+    it('in_progress → research_done', () => {
+      const task = Task.create(defaults);
+      task.transitionTo('in_progress');
+      task.transitionTo('research_done');
+      expect(task.status).toBe('research_done');
+    });
+
+    it('research_done → in_progress (resume)', () => {
+      const task = Task.create(defaults);
+      task.transitionTo('in_progress');
+      task.transitionTo('research_done');
+      task.transitionTo('in_progress');
+      expect(task.status).toBe('in_progress');
+    });
+
+    it('research_done → cancelled', () => {
+      const task = Task.create(defaults);
+      task.transitionTo('in_progress');
+      task.transitionTo('research_done');
+      task.transitionTo('cancelled');
+      expect(task.status).toBe('cancelled');
+    });
+
+    it('rejects research_done → done', () => {
+      const task = Task.create(defaults);
+      task.transitionTo('in_progress');
+      task.transitionTo('research_done');
+      expect(() => task.transitionTo('done')).toThrow(InvalidTransitionError);
+    });
+
     it('rejects invalid transition pending → done', () => {
       const task = Task.create(defaults);
       expect(() => task.transitionTo('done')).toThrow(InvalidTransitionError);

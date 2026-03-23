@@ -205,25 +205,26 @@ export class PgTaskRepo extends ITaskRepo {
   }
 
   /**
-   * Atomically activate a specific task (pending → in_progress),
+   * Atomically activate a specific task (fromStatus → in_progress),
    * but ONLY if no other active task exists for the same project.
    *
    * @param {string} taskId
    * @param {string} projectId
-   * @returns {boolean} — true if activated, false if slot is occupied
+   * @param {string} [fromStatus='pending'] — expected current status of the task
+   * @returns {boolean} — true if activated, false if slot is occupied or status mismatch
    */
-  async activateIfNoActive(taskId, projectId) {
+  async activateIfNoActive(taskId, projectId, fromStatus = 'pending') {
     const { rowCount } = await this._getPool().query(
       `UPDATE tasks SET status = 'in_progress', updated_at = NOW()
        WHERE id = $1
          AND project_id = $2
-         AND status = 'pending'
+         AND status = $3
          AND NOT EXISTS (
            SELECT 1 FROM tasks t2
            WHERE t2.project_id = $2
              AND t2.status IN ('in_progress', 'waiting_reply', 'needs_escalation')
          )`,
-      [taskId, projectId],
+      [taskId, projectId, fromStatus],
     );
     return rowCount > 0;
   }

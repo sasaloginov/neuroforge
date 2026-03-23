@@ -19,5 +19,5 @@ export class ITaskRepo {
   async hasActiveTask(_projectId) { throw new Error('Not implemented'); }
   async findOldestPending(_projectId) { throw new Error('Not implemented'); }
   async activateOldestPending(_projectId) { throw new Error('Not implemented'); }
-  async activateIfNoActive(_taskId, _projectId) { throw new Error('Not implemented'); }
+  async activateIfNoActive(_taskId, _projectId, _fromStatus) { throw new Error('Not implemented'); }
 }

@@ -876,7 +876,7 @@ describe('ManagerDecision — research mode', () => {
     };
     taskService = {
       getTask: vi.fn().mockResolvedValue(makeTask()),
-      completeTask: vi.fn().mockResolvedValue(undefined),
+      completeResearch: vi.fn().mockResolvedValue(undefined),
       failTask: vi.fn().mockResolvedValue(undefined),
     };
     chatEngine = {
@@ -906,7 +906,7 @@ describe('ManagerDecision — research mode', () => {
     });
   });
 
-  it('completes task after successful analyst run without calling LLM', async () => {
+  it('completes task with research_done status after successful analyst run', async () => {
     runRepo.findById.mockResolvedValue({ id: 'run-analyst', taskId: 'task-1', status: 'done' });
     runRepo.findByTaskId.mockResolvedValue([
       { id: 'run-analyst', roleName: 'analyst', status: 'done', response: '# Research\n\nFindings...', createdAt: t0 },
@@ -916,11 +916,11 @@ describe('ManagerDecision — research mode', () => {
 
     expect(result.action).toBe('complete_task');
     expect(result.details.mode).toBe('research');
-    expect(taskService.completeTask).toHaveBeenCalledWith('task-1');
+    expect(taskService.completeResearch).toHaveBeenCalledWith('task-1');
     expect(chatEngine.runPrompt).not.toHaveBeenCalled();
   });
 
-  it('sends callback with result field containing analyst response', async () => {
+  it('sends callback with type research_done containing analyst response', async () => {
     const analystResponse = '# Deep Research\n\nDetailed findings about topic X.';
     runRepo.findById.mockResolvedValue({ id: 'run-analyst', taskId: 'task-1', status: 'done' });
     runRepo.findByTaskId.mockResolvedValue([
@@ -932,16 +932,26 @@ describe('ManagerDecision — research mode', () => {
     expect(callbackSender.send).toHaveBeenCalledWith(
       'https://example.com/cb',
       expect.objectContaining({
-        type: 'done',
+        type: 'research_done',
         mode: 'research',
         result: analystResponse,
-        summary: 'Исследование завершено',
+        summary: 'Исследование завершено. Отправьте /resume для продолжения в разработку.',
         taskId: 'task-1',
         shortId: 'NF-15',
         truncated: false,
       }),
       { chatId: 1 },
     );
+  });
+
+  it('skips research_done tasks in terminal check', async () => {
+    taskService.getTask.mockResolvedValue(makeTask({ status: 'research_done' }));
+    runRepo.findById.mockResolvedValue({ id: 'run-analyst', taskId: 'task-1', status: 'done' });
+
+    const result = await managerDecision.execute({ completedRunId: 'run-analyst' });
+
+    expect(result.action).toBe('skipped');
+    expect(result.details.reason).toBe('Task already terminal');
   });
 
   it('sets resultFormat=file when result exceeds Telegram message limit', async () => {
@@ -1009,7 +1019,7 @@ describe('ManagerDecision — research mode', () => {
 
     // Should fall through to LLM manager
     expect(chatEngine.runPrompt).toHaveBeenCalled();
-    expect(taskService.completeTask).not.toHaveBeenCalled();
+    expect(taskService.completeResearch).not.toHaveBeenCalled();
   });
 
   it('ignores research mode for mode=full tasks', async () => {

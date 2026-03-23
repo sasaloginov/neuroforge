@@ -65,6 +65,20 @@ export class TaskService {
     return task;
   }
 
+  async completeResearch(taskId) {
+    const task = await this.getTask(taskId);
+    task.transitionTo(Task.STATUSES.RESEARCH_DONE);
+    await this.#taskRepo.save(task);
+    return task;
+  }
+
+  async updateMode(taskId, mode) {
+    const task = await this.getTask(taskId);
+    task.mode = mode;
+    await this.#taskRepo.save(task);
+    return task;
+  }
+
   async failTask(taskId) {
     const task = await this.getTask(taskId);
     task.transitionTo(Task.STATUSES.FAILED);
