@@ -28,7 +28,7 @@ import { RestartTask } from './application/RestartTask.js';
 import { EnqueueTask } from './application/EnqueueTask.js';
 import { ResumeResearch } from './application/ResumeResearch.js';
 import { StartNextPendingTask } from './application/StartNextPendingTask.js';
-import { RunAbortRegistry } from './domain/services/RunAbortRegistry.js';
+import { RunAbortRegistry } from './application/RunAbortRegistry.js';
 import { GitCLIAdapter } from './infrastructure/git/gitCLIAdapter.js';
 import { createServer } from './infrastructure/http/server.js';
 import { createWorker } from './infrastructure/scheduler/worker.js';
