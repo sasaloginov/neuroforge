@@ -105,11 +105,11 @@ PM (sonnet, --resume)
 - [ ] При merge conflict — task escalation (не автоматическое разрешение)
 - [ ] Удаление feature-ветки после успешного merge
 
-### Убрать tester и cto
-- [ ] Роль tester удалена из roles/ и RoleRegistry
-- [ ] Роль cto удалена из roles/ и RoleRegistry
+### Роли tester и cto
+- [ ] Роли tester и cto НЕ удаляются из roles/, файлы остаются
+- [ ] Роли не регистрируются в пайплайне v2 (PM их не запускает)
 - [ ] Developer role definition включает: "Напиши тесты, запусти, убедись что проходят"
-- [ ] Все существующие тесты проходят без tester/cto ролей
+- [ ] Старые роли reviewer-architecture/business/security тоже остаются в roles/
 
 ### Обратная совместимость и сохранение логики
 
@@ -192,9 +192,9 @@ PM (sonnet, --resume)
   - Новый `roles/pm.md` — PM-оркестратор
   - Обновить `roles/analyst.md` — убрать создание ветки (делает PM)
   - Обновить `roles/developer.md` — добавить тестирование
-  - Новый `roles/reviewer.md` — unified чеклист
-  - Удалить `roles/tester.md`, `roles/cto.md`
-  - Удалить `roles/reviewer-architecture.md`, `roles/reviewer-business.md`, `roles/reviewer-security.md`
+  - Новый `roles/reviewer.md` — unified чеклист (architecture + business + security)
+  - `roles/tester.md`, `roles/cto.md` — НЕ удалять, оставить как есть (не регистрируются в пайплайне, но сохраняются на случай возврата)
+  - `roles/reviewer-architecture.md`, `roles/reviewer-business.md`, `roles/reviewer-security.md` — НЕ удалять, оставить как есть
 
 ## Ограничения и риски
 
