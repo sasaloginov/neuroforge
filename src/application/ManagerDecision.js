@@ -12,17 +12,19 @@ export class ManagerDecision {
   #roleRegistry;
   #callbackSender;
   #runRepo;
+  #sessionRepo;
   #logger;
 
   #startNextPendingTask;
 
-  constructor({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, logger, startNextPendingTask }) {
+  constructor({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, sessionRepo, logger, startNextPendingTask }) {
     this.#runService = runService;
     this.#taskService = taskService;
     this.#chatEngine = chatEngine;
     this.#roleRegistry = roleRegistry;
     this.#callbackSender = callbackSender;
     this.#runRepo = runRepo;
+    this.#sessionRepo = sessionRepo || null;
     this.#logger = logger || console;
     this.#startNextPendingTask = startNextPendingTask || null;
   }
@@ -69,13 +71,29 @@ export class ManagerDecision {
       return reviewResult;
     }
 
-    // Build manager prompt and run manager agent
+    // Build manager prompt and run manager agent (with --resume for context accumulation)
     const managerPrompt = buildManagerPrompt(task, allRuns);
 
     let result;
+    let managerSession = null;
     try {
       const role = this.#roleRegistry.get('manager');
-      result = await this.#chatEngine.runPrompt('manager', managerPrompt, { timeoutMs: role.timeoutMs });
+
+      // Find or create manager session for this project (enables --resume)
+      if (this.#sessionRepo) {
+        managerSession = await this.#sessionRepo.findOrCreate(task.projectId, 'manager');
+      }
+
+      result = await this.#chatEngine.runPrompt('manager', managerPrompt, {
+        timeoutMs: role.timeoutMs,
+        sessionId: managerSession?.cliSessionId || null,
+      });
+
+      // Save manager session for next --resume
+      if (this.#sessionRepo && managerSession && result.sessionId && result.sessionId !== managerSession.cliSessionId) {
+        managerSession.cliSessionId = result.sessionId;
+        await this.#sessionRepo.save(managerSession);
+      }
     } catch (error) {
       await this.#taskService.failTask(task.id);
       if (task.callbackUrl) {

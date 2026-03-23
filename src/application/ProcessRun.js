@@ -53,6 +53,16 @@ export class ProcessRun {
       // Find or create session record (atomic upsert)
       const session = await this.#sessionRepo.findOrCreate(projectId, run.roleName);
 
+      // Developer resumes analyst session (shared context — files already read)
+      if (run.roleName === 'developer' && !session.cliSessionId) {
+        const analystSession = await this.#sessionRepo.findByProjectAndRole(projectId, 'analyst');
+        if (analystSession?.cliSessionId) {
+          session.cliSessionId = analystSession.cliSessionId;
+          await this.#sessionRepo.save(session);
+          this.#logger.info('[ProcessRun] Developer inheriting analyst session: %s', analystSession.cliSessionId);
+        }
+      }
+
       // Bind session to run before executing
       run.sessionId = session.id;
       await this.#runRepo.save(run);
