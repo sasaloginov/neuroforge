@@ -179,6 +179,6 @@ describe('ResumeResearch', () => {
       instruction: 'Go',
     });
 
-    expect(taskRepo.activateIfNoActive).toHaveBeenCalledWith('task-1', 'proj-1');
+    expect(taskRepo.activateIfNoActive).toHaveBeenCalledWith('task-1', 'proj-1', 'research_done');
   });
 });

@@ -34,8 +34,8 @@ export class ResumeResearch {
       throw new InvalidStateError('instruction is required');
     }
 
-    // Atomically activate — fails if another task is active
-    const activated = await this.#taskRepo.activateIfNoActive(task.id, task.projectId);
+    // Atomically activate (research_done → in_progress) — fails if another task is active
+    const activated = await this.#taskRepo.activateIfNoActive(task.id, task.projectId, 'research_done');
     if (!activated) {
       throw new InvalidStateError(
         'Cannot resume: another task is active for this project'
