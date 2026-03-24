@@ -26,6 +26,7 @@ export class ManagerDecision {
   #callbackSender;
   #runRepo;
   #sessionRepo;
+  #projectRepo;
   #gitOps;
   #workDir;
   #maxReviewRevisions;
@@ -33,7 +34,7 @@ export class ManagerDecision {
 
   #startNextPendingTask;
 
-  constructor({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, sessionRepo, gitOps, workDir, maxReviewRevisions, logger, startNextPendingTask }) {
+  constructor({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, sessionRepo, projectRepo, gitOps, workDir, maxReviewRevisions, logger, startNextPendingTask }) {
     this.#runService = runService;
     this.#taskService = taskService;
     this.#chatEngine = chatEngine;
@@ -41,6 +42,7 @@ export class ManagerDecision {
     this.#callbackSender = callbackSender;
     this.#runRepo = runRepo;
     this.#sessionRepo = sessionRepo || null;
+    this.#projectRepo = projectRepo || null;
     this.#gitOps = gitOps || null;
     this.#workDir = workDir || null;
     this.#maxReviewRevisions = maxReviewRevisions ?? DEFAULT_MAX_REVIEW_REVISIONS;
@@ -386,9 +388,15 @@ FAIL = есть CRITICAL/MAJOR/HIGH. PASS = только MINOR/LOW или нет
    */
   async #mergeAndComplete(task) {
     // Attempt git merge if gitOps available
-    if (this.#gitOps && this.#workDir && task.branchName) {
+    if (this.#gitOps && task.branchName) {
+      // Resolve project workDir (from DB), fallback to global workDir
+      let mergeDir = this.#workDir;
+      if (this.#projectRepo && task.projectId) {
+        const project = await this.#projectRepo.findById(task.projectId);
+        if (project?.workDir) mergeDir = project.workDir;
+      }
       try {
-        await this.#gitOps.mergeBranch(task.branchName, this.#workDir);
+        await this.#gitOps.mergeBranch(task.branchName, mergeDir);
         this.#logger.info('[ManagerDecision] Merged branch %s to main', task.branchName);
       } catch (err) {
         this.#logger.error('[ManagerDecision] Merge failed: %s', err.message);
