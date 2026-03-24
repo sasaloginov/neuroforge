@@ -50,8 +50,8 @@ describe('ResumeResearch', () => {
       findById: vi.fn().mockResolvedValue({ id: 'proj-1', prefix: 'NF' }),
     };
     roleRegistry = {
-      get: vi.fn().mockReturnValue({ name: 'implementer' }),
-      has: vi.fn().mockImplementation((name) => name === 'implementer'),
+      get: vi.fn().mockReturnValue({ name: 'developer' }),
+      has: vi.fn().mockImplementation((name) => name === 'developer'),
     };
     callbackSender = {
       send: vi.fn().mockResolvedValue({ ok: true }),
@@ -63,7 +63,7 @@ describe('ResumeResearch', () => {
     });
   });
 
-  it('resumes research_done task → enqueues implementer with instruction', async () => {
+  it('resumes research_done task → enqueues developer with instruction', async () => {
     const result = await resumeResearch.execute({
       taskId: 'task-1',
       instruction: 'Передай в разработку',
@@ -76,11 +76,11 @@ describe('ResumeResearch', () => {
     // Mode updated to full
     expect(taskService.updateMode).toHaveBeenCalledWith('task-1', 'full');
 
-    // Implementer enqueued (developer phase)
+    // Developer enqueued
     expect(runService.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         taskId: 'task-1',
-        roleName: 'implementer',
+        roleName: 'developer',
       }),
     );
 
@@ -101,10 +101,7 @@ describe('ResumeResearch', () => {
     );
   });
 
-  it('falls back to developer role when implementer not available', async () => {
-    roleRegistry.has.mockReturnValue(false);
-    roleRegistry.get.mockReturnValue({ name: 'developer' });
-
+  it('enqueues developer role (Pipeline v2)', async () => {
     await resumeResearch.execute({
       taskId: 'task-1',
       instruction: 'Go',

@@ -53,13 +53,13 @@ describe('ManagerDecision', () => {
     };
     chatEngine = {
       runPrompt: vi.fn().mockResolvedValue({
-        response: JSON.stringify({ action: 'spawn_run', role: 'implementer', prompt: 'Implement the feature' }),
+        response: JSON.stringify({ action: 'spawn_run', role: 'developer', prompt: 'Implement the feature' }),
         sessionId: 'mgr-session',
       }),
     };
     roleRegistry = {
       get: vi.fn().mockReturnValue({ name: 'pm', timeoutMs: 600000 }),
-      has: vi.fn().mockImplementation((name) => ['implementer', 'reviewer', 'pm'].includes(name)),
+      has: vi.fn().mockImplementation((name) => ['analyst', 'developer', 'reviewer', 'pm'].includes(name)),
     };
     callbackSender = {
       send: vi.fn().mockResolvedValue({ ok: true }),
@@ -73,7 +73,7 @@ describe('ManagerDecision', () => {
   });
 
   describe('deterministic transitions', () => {
-    it('analyst_done → enqueues developer phase (implementer)', async () => {
+    it('analyst_done → enqueues developer phase', async () => {
       runRepo.findById.mockResolvedValue(makeRun({ roleName: 'analyst', status: 'done' }));
       runRepo.findByTaskId.mockResolvedValue([
         makeRun({ roleName: 'analyst', status: 'done', prompt: 'Фаза: analyst.' }),
@@ -85,23 +85,25 @@ describe('ManagerDecision', () => {
       expect(result.details.from).toBe('analyst');
       expect(result.details.to).toBe('developer');
       expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
-        roleName: 'implementer',
+        roleName: 'developer',
       }));
       // No LLM call
       expect(chatEngine.runPrompt).not.toHaveBeenCalled();
     });
 
-    it('implementer analyst phase → enqueues developer phase', async () => {
-      runRepo.findById.mockResolvedValue(makeRun({ roleName: 'implementer', status: 'done', prompt: 'Фаза: analyst.' }));
+    it('analyst phase → enqueues developer phase', async () => {
+      runRepo.findById.mockResolvedValue(makeRun({ roleName: 'analyst', status: 'done', prompt: 'Фаза: analyst.' }));
       runRepo.findByTaskId.mockResolvedValue([
-        makeRun({ roleName: 'implementer', status: 'done', prompt: 'Фаза: analyst.' }),
+        makeRun({ roleName: 'analyst', status: 'done', prompt: 'Фаза: analyst.' }),
       ]);
 
       const result = await managerDecision.execute({ completedRunId: 'run-1' });
 
       expect(result.action).toBe('deterministic_transition');
+      expect(result.details.from).toBe('analyst');
+      expect(result.details.to).toBe('developer');
       expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
-        roleName: 'implementer',
+        roleName: 'developer',
       }));
       expect(chatEngine.runPrompt).not.toHaveBeenCalled();
     });
@@ -163,7 +165,7 @@ describe('ManagerDecision', () => {
       expect(result.action).toBe('revision_cycle');
       expect(taskService.incrementRevision).toHaveBeenCalled();
       expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
-        roleName: 'implementer',
+        roleName: 'developer',
       }));
       expect(chatEngine.runPrompt).not.toHaveBeenCalled();
     });
@@ -212,7 +214,11 @@ describe('ManagerDecision', () => {
       expect(chatEngine.runPrompt).not.toHaveBeenCalled();
     });
 
-    it('legacy cto_done → merge_and_complete', async () => {
+    it('legacy cto_done → falls through to PM LLM (no deterministic handler)', async () => {
+      chatEngine.runPrompt.mockResolvedValue({
+        response: JSON.stringify({ action: 'complete_task', summary: 'CTO approved' }),
+        sessionId: 'mgr-session',
+      });
       runRepo.findById.mockResolvedValue(makeRun({ roleName: 'cto', status: 'done' }));
       runRepo.findByTaskId.mockResolvedValue([
         makeRun({ id: 'run-cto', roleName: 'cto', status: 'done', createdAt: new Date('2026-01-01') }),
@@ -220,9 +226,9 @@ describe('ManagerDecision', () => {
 
       const result = await managerDecision.execute({ completedRunId: 'run-cto' });
 
-      expect(result.action).toBe('merge_and_complete');
+      expect(result.action).toBe('complete_task');
       expect(taskService.completeTask).toHaveBeenCalledWith('task-1');
-      expect(chatEngine.runPrompt).not.toHaveBeenCalled();
+      expect(chatEngine.runPrompt).toHaveBeenCalled();
     });
 
     it('needs_escalation calls tryStartNext to free project slot', async () => {
@@ -282,7 +288,7 @@ describe('ManagerDecision', () => {
 
       expect(result.action).toBe('spawn_run');
       expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
-        roleName: 'implementer',
+        roleName: 'developer',
       }));
     });
 
@@ -635,7 +641,7 @@ describe('ManagerDecision — research mode', () => {
     };
     roleRegistry = {
       get: vi.fn().mockReturnValue({ name: 'pm', timeoutMs: 600000 }),
-      has: vi.fn().mockImplementation((name) => ['implementer', 'reviewer', 'pm'].includes(name)),
+      has: vi.fn().mockImplementation((name) => ['analyst', 'developer', 'reviewer', 'pm'].includes(name)),
     };
     callbackSender = { send: vi.fn().mockResolvedValue({ ok: true }) };
     runRepo = { findById: vi.fn(), findByTaskId: vi.fn() };
@@ -683,13 +689,13 @@ describe('ManagerDecision — research mode', () => {
     );
   });
 
-  it('also recognizes implementer as analyst in research mode', async () => {
-    runRepo.findById.mockResolvedValue({ id: 'run-impl', taskId: 'task-1', status: 'done' });
+  it('recognizes analyst role in research mode', async () => {
+    runRepo.findById.mockResolvedValue({ id: 'run-analyst', taskId: 'task-1', status: 'done' });
     runRepo.findByTaskId.mockResolvedValue([
-      { id: 'run-impl', roleName: 'implementer', status: 'done', response: '# Research', createdAt: t0 },
+      { id: 'run-analyst', roleName: 'analyst', status: 'done', response: '# Research', createdAt: t0 },
     ]);
 
-    const result = await managerDecision.execute({ completedRunId: 'run-impl' });
+    const result = await managerDecision.execute({ completedRunId: 'run-analyst' });
 
     expect(result.action).toBe('complete_task');
     expect(result.details.mode).toBe('research');

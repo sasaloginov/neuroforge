@@ -50,7 +50,7 @@ describe('RestartTask', () => {
       findById: vi.fn().mockResolvedValue({ id: 'proj-1', prefix: 'NF' }),
     };
     roleRegistry = {
-      has: vi.fn().mockImplementation((name) => name === 'implementer'),
+      has: vi.fn().mockImplementation((name) => name === 'analyst'),
     };
     managerDecision = {
       execute: vi.fn().mockResolvedValue({ action: 'spawn_run', role: 'developer', prompt: 'Fix the code' }),
@@ -115,22 +115,11 @@ describe('RestartTask', () => {
     const result = await restartTask.execute({ taskId: 'task-1' });
 
     expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
-      roleName: 'implementer',
+      roleName: 'analyst',
       taskId: 'task-1',
     }));
     expect(result.decision.action).toBe('spawn_run');
     expect(managerDecision.execute).not.toHaveBeenCalled();
-  });
-
-  it('falls back to analyst role when implementer not registered', async () => {
-    roleRegistry.has.mockReturnValue(false);
-    runRepo.findByTaskId.mockResolvedValue([]);
-
-    const result = await restartTask.execute({ taskId: 'task-1' });
-
-    expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
-      roleName: 'analyst',
-    }));
   });
 
   it('delegates to managerDecision when terminal runs exist', async () => {

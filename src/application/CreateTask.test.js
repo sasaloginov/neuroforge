@@ -23,8 +23,8 @@ describe('CreateTask', () => {
       enqueue: vi.fn().mockResolvedValue({ id: 'run-1', status: 'queued' }),
     };
     roleRegistry = {
-      get: vi.fn().mockReturnValue({ name: 'implementer', timeoutMs: 300000 }),
-      has: vi.fn().mockImplementation((name) => name === 'implementer'),
+      get: vi.fn().mockReturnValue({ name: 'analyst', timeoutMs: 300000 }),
+      has: vi.fn().mockImplementation((name) => name === 'analyst'),
     };
     projectRepo = {
       findById: vi.fn().mockResolvedValue({ id: 'proj-1', name: 'test-project', prefix: 'TP' }),
@@ -39,7 +39,7 @@ describe('CreateTask', () => {
     createTask = new CreateTask({ taskService, runService, roleRegistry, projectRepo, taskRepo, callbackSender });
   });
 
-  it('creates task, generates branchName, enqueues implementer, sends callback', async () => {
+  it('creates task, generates branchName, enqueues analyst, sends callback', async () => {
     const result = await createTask.execute({
       projectId: 'proj-1',
       title: 'Build feature X',
@@ -57,7 +57,7 @@ describe('CreateTask', () => {
     expect(taskRepo.activateIfNoActive).toHaveBeenCalledWith('task-1', 'proj-1');
     expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       taskId: 'task-1',
-      roleName: 'implementer',
+      roleName: 'analyst',
     }));
     expect(callbackSender.send).toHaveBeenCalledWith(
       'https://example.com/callback',
@@ -66,10 +66,7 @@ describe('CreateTask', () => {
     );
   });
 
-  it('falls back to analyst role when implementer not available', async () => {
-    roleRegistry.has.mockReturnValue(false);
-    roleRegistry.get.mockReturnValue({ name: 'analyst', timeoutMs: 300000 });
-
+  it('enqueues analyst role (Pipeline v2)', async () => {
     const result = await createTask.execute({
       projectId: 'proj-1',
       title: 'Build feature X',
@@ -192,8 +189,7 @@ describe('CreateTask', () => {
     );
   });
 
-  it('throws RoleNotFoundError when neither implementer nor analyst role is registered', async () => {
-    roleRegistry.has.mockReturnValue(false);
+  it('throws RoleNotFoundError when analyst role is not registered', async () => {
     roleRegistry.get.mockImplementation(() => { throw new RoleNotFoundError('analyst'); });
 
     await expect(createTask.execute({

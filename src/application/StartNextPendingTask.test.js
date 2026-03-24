@@ -29,31 +29,20 @@ describe('StartNextPendingTask', () => {
       enqueue: vi.fn().mockResolvedValue({ id: 'run-1', status: 'queued' }),
     };
     roleRegistry = {
-      get: vi.fn().mockReturnValue({ name: 'implementer', timeoutMs: 1800000 }),
-      has: vi.fn().mockImplementation((name) => name === 'implementer'),
+      get: vi.fn().mockReturnValue({ name: 'analyst', timeoutMs: 1800000 }),
+      has: vi.fn().mockImplementation((name) => name === 'analyst'),
     };
 
     startNext = new StartNextPendingTask({ taskRepo, runService, roleRegistry });
   });
 
-  it('atomically activates oldest pending task and enqueues implementer', async () => {
+  it('atomically activates oldest pending task and enqueues analyst', async () => {
     const result = await startNext.execute({ projectId: 'proj-1' });
 
     expect(result).toEqual({ started: true, taskId: 'task-1' });
     expect(taskRepo.activateOldestPending).toHaveBeenCalledWith('proj-1');
     expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       taskId: 'task-1',
-      roleName: 'implementer',
-    }));
-  });
-
-  it('falls back to analyst when implementer not available', async () => {
-    roleRegistry.has.mockReturnValue(false);
-    roleRegistry.get.mockReturnValue({ name: 'analyst', timeoutMs: 1800000 });
-
-    const result = await startNext.execute({ projectId: 'proj-1' });
-
-    expect(runService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       roleName: 'analyst',
     }));
   });
