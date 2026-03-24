@@ -1,0 +1,47 @@
+# {{PROJECT_NAME}}
+
+<!-- LLM: замени {{плейсхолдеры}} реальными данными из проекта -->
+
+## Overview
+{{Описание проекта — из README.md или своими словами после анализа кода}}
+
+## Tech Stack
+{{Определи из package.json / composer.json / go.mod / pyproject.toml / Cargo.toml / pubspec.yaml / build.gradle.kts}}
+- **Runtime:** {{runtime}}
+- **Framework:** {{framework}}
+- **DB:** {{если есть}}
+- **Language:** {{language}}
+
+## Project Structure
+{{Сгенерируй дерево основных директорий, как в примере ниже}}
+```
+src/
+├── ...
+```
+
+## Запуск
+{{Команды для запуска, тестов, сборки — из package.json scripts / Makefile / README}}
+```bash
+# Dev
+{{dev command}}
+
+# Test
+{{test command}}
+
+# Build
+{{build command}}
+```
+
+## Task Manager (Нейроцех)
+
+Base URL: `http://localhost:3000`
+Project: `{{SLUG}}`
+Prefix: `{{PREFIX}}`
+
+```bash
+# Создать задачу
+curl -X POST http://localhost:3000/tasks \
+  -H "Authorization: Bearer $NF_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"projectId": "{{PROJECT_ID}}", "title": "...", "description": "..."}'
+```
