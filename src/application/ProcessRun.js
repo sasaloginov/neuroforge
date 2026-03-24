@@ -58,25 +58,18 @@ export class ProcessRun {
         session = await this.#sessionRepo.findOrCreate(projectId, run.roleName);
       }
 
-      // Implementer/developer resumes analyst/implementer session (shared context)
-      const devRoles = ['developer', 'implementer'];
-      const analystRoles = ['analyst', 'implementer'];
-      if (devRoles.includes(run.roleName) && !session.cliSessionId) {
-        // Try to find existing implementer or analyst session for this task
-        for (const srcRole of analystRoles) {
-          if (srcRole === run.roleName) continue;
-          let srcSession = null;
-          if (task && this.#sessionRepo.findByTaskAndRole) {
-            srcSession = await this.#sessionRepo.findByTaskAndRole(task.id, srcRole);
-          } else {
-            srcSession = await this.#sessionRepo.findByProjectAndRole(projectId, srcRole);
-          }
-          if (srcSession?.cliSessionId) {
-            session.cliSessionId = srcSession.cliSessionId;
-            await this.#sessionRepo.save(session);
-            this.#logger.info('[ProcessRun] %s inheriting %s session: %s', run.roleName, srcRole, srcSession.cliSessionId);
-            break;
-          }
+      // Developer resumes analyst session (shared context via --resume)
+      if (run.roleName === 'developer' && !session.cliSessionId) {
+        let srcSession = null;
+        if (task && this.#sessionRepo.findByTaskAndRole) {
+          srcSession = await this.#sessionRepo.findByTaskAndRole(task.id, 'analyst');
+        } else {
+          srcSession = await this.#sessionRepo.findByProjectAndRole(projectId, 'analyst');
+        }
+        if (srcSession?.cliSessionId) {
+          session.cliSessionId = srcSession.cliSessionId;
+          await this.#sessionRepo.save(session);
+          this.#logger.info('[ProcessRun] developer inheriting analyst session: %s', srcSession.cliSessionId);
         }
       }
 

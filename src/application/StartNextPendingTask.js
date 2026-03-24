@@ -17,9 +17,7 @@ export class StartNextPendingTask {
    * @returns {{ started: boolean, taskId?: string, reason?: string }}
    */
   async execute({ projectId }) {
-    // Validate analyst/implementer role exists before attempting activation
-    const analystRole = this.#roleRegistry.has('implementer') ? 'implementer' : 'analyst';
-    this.#roleRegistry.get(analystRole);
+    this.#roleRegistry.get('analyst');
 
     // Atomic: check no active + find oldest pending + transition to in_progress
     const task = await this.#taskRepo.activateOldestPending(projectId);
@@ -39,7 +37,7 @@ ${task.description ?? ''}
     await this.#runService.enqueue({
       taskId: task.id,
       stepId: null,
-      roleName: analystRole,
+      roleName: 'analyst',
       prompt,
       callbackUrl: task.callbackUrl,
       callbackMeta: task.callbackMeta,

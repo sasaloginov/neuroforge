@@ -32,18 +32,19 @@ allowed_tools:
 - **fail_task** — задача провалена. Поля: `action`, `reason`
 
 ## Доступные роли
-- `implementer` — исследование + разработка (фаза задаётся через промпт)
+- `analyst` — исследование и проектирование
+- `developer` — реализация кода по спецификации (resume'ит сессию analyst'а)
 - `reviewer` — единое ревью (архитектура + бизнес + безопасность)
 
 ## Стандартный пайплайн
-1. `implementer` (Фаза: analyst) → исследование, spec, context.md
-3. `implementer` (Фаза: developer, --resume) → код + тесты
-4. `reviewer` → ревью по git diff
-5. Если FAIL → `implementer` (Фаза: fix, --resume) → исправления → `reviewer` (--resume)
-6. Если PASS → merge + complete
+1. `analyst` → исследование, spec, context.md
+2. `developer` (--resume сессии analyst'а) → код + тесты
+3. `reviewer` → ревью по git diff
+4. Если FAIL → `developer` (--resume) → исправления → `reviewer` (--resume)
+5. Если PASS → merge + complete
 
 ## Детерминистические решения (код обрабатывает автоматически)
-- analyst_done → developer phase (resume implementer session)
+- analyst_done → developer (resume analyst session)
 - developer_done → reviewer
 - reviewer PASS → merge_and_complete
 - reviewer FAIL + blocking findings → developer fix (resume) → re-review

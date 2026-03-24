@@ -48,9 +48,8 @@ export class ResumeResearch {
 
     // Get previous analyst's research for context
     const allRuns = await this.#runRepo.findByTaskId(task.id);
-    const analystRoles = ['analyst', 'implementer'];
     const lastAnalystRun = [...allRuns]
-      .filter(r => analystRoles.includes(r.roleName) && r.status === 'done')
+      .filter(r => r.roleName === 'analyst' && r.status === 'done')
       .sort((a, b) => b.createdAt - a.createdAt)[0];
 
     const researchContext = lastAnalystRun?.response
@@ -58,8 +57,7 @@ export class ResumeResearch {
       : '';
 
     // Enqueue developer phase with research context + owner instruction
-    const roleName = this.#roleRegistry.has('implementer') ? 'implementer' : 'developer';
-    this.#roleRegistry.get(roleName);
+    this.#roleRegistry.get('developer');
 
     const prompt = `Фаза: developer.
 
@@ -75,7 +73,7 @@ ${instruction}
     await this.#runService.enqueue({
       taskId: task.id,
       stepId: null,
-      roleName,
+      roleName: 'developer',
       prompt,
       callbackUrl: task.callbackUrl,
       callbackMeta: task.callbackMeta,
