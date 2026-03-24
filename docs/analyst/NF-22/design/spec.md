@@ -2,235 +2,128 @@
 
 ## Обзор
 
-CLI-скрипт `scripts/onboard.js`, который автоматизирует полный цикл добавления проекта в Нейроцех: от регистрации в БД до генерации CLAUDE.md.
+Двухфазный онбординг: **scaffold-скрипт** создаёт структуру и копирует базовые файлы, затем **LLM-агент** (onboarder) анализирует проект и адаптирует всё под конкретный стек и архитектуру.
 
 ## ADR
 
-### Почему CLI-скрипт, а не API endpoint
+### Почему LLM вместо детерминистического скрипта
 
-**Решение:** Standalone Node.js скрипт (`scripts/onboard.js`), запускаемый из командной строки.
+**Решение:** Скрипт делает только механическую работу (mkdir, cp, DB insert). Всю интеллектуальную работу (анализ стека, генерация CLAUDE.md, настройка permissions) делает LLM-агент.
 
-**Альтернативы:**
-- **API endpoint** `POST /projects/onboard` — отвергнут: онбординг включает файловую систему (создание CLAUDE.md, проверка workDir), что плохо ложится в HTTP-модель. Требует доступ к FS сервера.
-- **Интерактивный wizard** — частично принят: скрипт запрашивает данные через stdin, но может работать и в non-interactive режиме с флагами.
+**Альтернатива отвергнута:** Детерминистический StackDetector + шаблонный генератор CLAUDE.md. Проблема: эвристики на основе файлов хрупкие, шаблон не может учесть нюансы конкретного проекта (monorepo, нестандартная структура, специфичный workflow).
 
-**Обоснование:** CLI-скрипт имеет доступ и к API, и к файловой системе. Переиспользует domain-логику (Project.create) напрямую через БД, не дублируя HTTP-слой.
+**Обоснование:**
+- LLM может прочитать README, package.json, существующий CLAUDE.md и понять контекст глубже любого regex
+- Если CLAUDE.md уже есть — LLM дополнит его секцией Нейроцеха, не ломая существующее
+- Если проект нестандартный — LLM адаптируется, скрипт — нет
+- Меньше кода в кодовой базе, меньше поддержки
 
 ### Почему не per-project roles
 
-**Решение:** Роли остаются глобальными (`roles/*.md`). Project-specific контекст передаётся через CLAUDE.md в workDir.
+**Решение:** Роли остаются глобальными (`roles/*.md`). Project-specific контекст передаётся через CLAUDE.md в workDir проекта.
 
-**Обоснование:** Текущая архитектура рассчитана на единый набор ролей. CLAUDE.md достаточно для project-specific контекста — агенты читают его автоматически.
+**Обоснование:** CLAUDE.md автоматически читается Claude CLI при запуске в workDir. Этого достаточно для project-specific контекста.
 
 ## Архитектура
 
-### Диаграмма компонентов (C4 Level 3)
+### Диаграмма компонентов
 
 ```mermaid
 graph TB
-    subgraph CLI["scripts/onboard.js"]
-        Wizard["Interactive Wizard<br/>(readline)"]
-        Detector["Stack Detector<br/>(file-based heuristics)"]
-        Generator["CLAUDE.md Generator<br/>(template engine)"]
-        Registrar["Project Registrar<br/>(direct DB)"]
+    subgraph Phase1["Фаза 1: Scaffold (скрипт)"]
+        CLI["scripts/onboard.js"]
+        CLI -->|mkdir, cp| FS["Структура в workDir"]
+        CLI -->|INSERT| DB[(PostgreSQL)]
     end
 
-    subgraph DB["PostgreSQL"]
-        Projects[(projects)]
-        Users[(users)]
-        ApiKeys[(api_keys)]
+    subgraph Phase2["Фаза 2: Adapt (LLM)"]
+        Agent["Onboarder Agent<br/>(новая роль)"]
+        Agent -->|read| Project["Файлы проекта<br/>(README, package.json, ...)"]
+        Agent -->|read| Template["Скопированные шаблоны"]
+        Agent -->|write| ClaudeMD["CLAUDE.md<br/>(создать или дополнить)"]
+        Agent -->|write| Settings[".claude/settings.local.json"]
+        Agent -->|write| ProjectMap["PROJECT_MAP.md"]
     end
 
-    subgraph FS["File System"]
-        WorkDir["/root/dev/{project}"]
-        ClaudeMD["CLAUDE.md"]
-        ClaudeSettings[".claude/settings.local.json"]
-    end
-
-    Wizard --> Detector
-    Wizard --> Registrar
-    Wizard --> Generator
-    Detector -->|scan files| WorkDir
-    Generator -->|write| ClaudeMD
-    Generator -->|write| ClaudeSettings
-    Registrar -->|INSERT| Projects
-    Registrar -->|INSERT| Users
-    Registrar -->|INSERT| ApiKeys
+    Phase1 --> Phase2
 ```
 
-### Sequence Diagram: онбординг
+### Sequence Diagram
 
 ```mermaid
 sequenceDiagram
     actor User
     participant CLI as onboard.js
-    participant FS as File System
     participant DB as PostgreSQL
+    participant FS as File System
+    participant LLM as Onboarder Agent
 
     User->>CLI: node scripts/onboard.js --work-dir /root/dev/my_project
 
+    Note over CLI: Фаза 1 — Scaffold
     CLI->>FS: Проверить workDir существует
-    FS-->>CLI: OK
-
-    CLI->>FS: Сканировать стек (package.json, composer.json, go.mod...)
-    FS-->>CLI: {lang: "php", framework: "symfony", ...}
+    CLI->>FS: Проверить git repo (git remote get-url origin)
 
     alt Interactive mode
-        CLI->>User: Подтвердите: name, prefix, repoUrl, stack
-        User->>CLI: Подтверждено / скорректировано
+        CLI->>User: Подтвердите: name, prefix, repoUrl
+        User->>CLI: OK / скорректировано
     end
 
-    CLI->>DB: INSERT INTO projects (name, prefix, repo_url, work_dir)
-    DB-->>CLI: project.id
+    CLI->>DB: INSERT project, user, api_key
+    DB-->>CLI: project.id, api_key.token
 
-    CLI->>DB: INSERT INTO users (name, role='member')
-    DB-->>CLI: user.id
+    CLI->>FS: Создать структуру .neuroforge/
+    CLI->>FS: Скопировать шаблоны (CLAUDE.md.template, onboarding-checklist.md)
 
-    CLI->>DB: INSERT INTO api_keys (name, key_hash, user_id, project_id)
-    DB-->>CLI: api_key.id
+    CLI->>User: Scaffold готов. API Key: nf_abc123...
 
-    CLI->>FS: Сгенерировать CLAUDE.md из шаблона + detected stack
-    CLI->>FS: Сгенерировать .claude/settings.local.json (permissions)
+    Note over LLM: Фаза 2 — Adapt
+    User->>LLM: Запуск onboarder через Нейроцех или вручную
 
-    CLI->>User: ✅ Проект зарегистрирован<br/>API Key: nf_abc123...<br/>CLAUDE.md создан
+    LLM->>FS: Прочитать README.md, package.json, go.mod, ...
+    LLM->>FS: Прочитать существующий CLAUDE.md (если есть)
+    LLM->>FS: Прочитать .neuroforge/templates/CLAUDE.md.template
+
+    alt CLAUDE.md существует
+        LLM->>FS: Дополнить CLAUDE.md секцией Нейроцеха
+    else CLAUDE.md нет
+        LLM->>FS: Создать CLAUDE.md из шаблона, заполнив реальными данными
+    end
+
+    LLM->>FS: Создать/обновить .claude/settings.local.json
+    LLM->>FS: Создать PROJECT_MAP.md (если нет)
+    LLM->>FS: Отметить checklist в .neuroforge/onboarding-checklist.md
+    LLM->>FS: git add && git commit && git push
+
+    LLM->>User: Онбординг завершён, вот что сделано
 ```
 
 ## Детальный дизайн
 
-### 1. Stack Detector (`src/domain/services/StackDetector.js`)
+### Фаза 1: Scaffold-скрипт (`scripts/onboard.js`)
 
-**Слой:** Domain (чистая логика, без побочных эффектов кроме чтения FS)
+Минимальный скрипт. Никакой "умной" логики — только IO.
 
-```js
-class StackDetector {
-  /**
-   * @param {string} workDir — абсолютный путь к проекту
-   * @returns {Promise<DetectedStack>}
-   */
-  async detect(workDir) → DetectedStack
-}
-```
+**Что делает:**
+1. Валидирует входные параметры (name, prefix, workDir существует, git repo)
+2. Регистрирует проект в БД (project + user + api_key)
+3. Создаёт структуру `.neuroforge/` в workDir проекта
+4. Копирует шаблоны из `docs/templates/onboarding/`
+5. Выводит API-ключ и инструкцию для запуска Фазы 2
 
-**Value Object: DetectedStack** (`src/domain/valueObjects/DetectedStack.js`)
-
-```js
-class DetectedStack {
-  constructor({
-    primaryLanguage,    // 'javascript' | 'php' | 'python' | 'go' | 'rust' | 'unknown'
-    languages,          // ['javascript', 'typescript']
-    frameworks,         // ['fastify', 'vue']
-    packageManager,     // 'npm' | 'composer' | 'pip' | 'go' | null
-    testFramework,      // 'vitest' | 'phpunit' | 'pytest' | null
-    hasDocker,          // boolean
-    structure,          // 'monorepo' | 'single'
-    description,        // из README.md или package.json description
-  })
-}
-```
-
-**Эвристики обнаружения:**
-
-| Файл | Язык | Фреймворк |
-|------|------|-----------|
-| `package.json` | javascript/typescript | express/fastify/vue/react/next (из dependencies) |
-| `composer.json` | php | symfony/laravel (из require) |
-| `go.mod` | go | gin/fiber/echo (из require) |
-| `requirements.txt` / `pyproject.toml` | python | django/fastapi/flask (из deps) |
-| `Cargo.toml` | rust | actix/axum (из dependencies) |
-| `tsconfig.json` | typescript | — (доп. сигнал) |
-| `docker-compose.yml` | — | hasDocker=true |
-| `README.md` | — | description (первый абзац) |
-
-### 2. CLAUDE.md Generator (`scripts/lib/claudeMdGenerator.js`)
-
-**Шаблон CLAUDE.md:**
-
-```markdown
-# CLAUDE.md
-
-## Проект: {{projectName}}
-
-- **Стек:** {{stack.primaryLanguage}}, {{stack.frameworks.join(', ')}}
-- **Структура:** {{stack.structure}}
-
-## Структура проекта
-
-{{generatedStructureTree}}
-
-## Task Manager (Нейроцех)
-
-Base URL: `http://localhost:3000`
-Project slug: `{{slug}}`
-Prefix: `{{prefix}}`
-
+**CLI:**
 ```bash
-# Создать задачу
-curl -X POST http://localhost:3000/tasks \
-  -H "Authorization: Bearer $NF_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"projectId": "{{projectId}}", "title": "...", "description": "..."}'
-```
+# Interactive (default)
+node scripts/onboard.js --work-dir /root/dev/my_project
 
-## Запуск
-{{runCommands}}
-```
-
-**Принцип:** Минимальный полезный CLAUDE.md. Пользователь дополняет его вручную после генерации. Скрипт не пытается быть идеальным — он создаёт фундамент.
-
-### 3. Permissions Generator (`scripts/lib/permissionsGenerator.js`)
-
-Генерирует `.claude/settings.local.json` на основе detected stack:
-
-| Стек | Permissions |
-|------|------------|
-| Все | `Bash(git *)`, `Bash(ls:*)`, `Bash(grep:*)` |
-| Node.js | `Bash(npm:*)`, `Bash(npx:*)`, `Bash(node:*)` |
-| PHP | `Bash(php:*)`, `Bash(composer:*)`, `Bash(./vendor/bin/phpunit:*)` |
-| Python | `Bash(python3:*)`, `Bash(pip:*)`, `Bash(pytest:*)` |
-| Go | `Bash(go:*)` |
-| Docker | `Bash(docker-compose:*)` |
-
-### 4. Project Registrar (`scripts/lib/projectRegistrar.js`)
-
-Работает напрямую с PostgreSQL (через существующий pg pool):
-
-```js
-class ProjectRegistrar {
-  constructor({ pool }) // uses existing pg.js pool
-
-  async register({ name, prefix, repoUrl, workDir }) → {
-    project,   // Project entity
-    user,      // User entity
-    apiKey: {  // { id, name, token (raw!) }
-      id, name, token
-    }
-  }
-}
-```
-
-**Логика:**
-1. Создать `Project` через `Project.create()` → `projectRepo.save()`
-2. Создать `User` (name = `{slug}-agent`, role = `member`)
-3. Создать `ApiKey` (привязан к user + project), вернуть raw token
-
-### 5. CLI Entry Point (`scripts/onboard.js`)
-
-```bash
-# Interactive mode (default)
-node scripts/onboard.js --work-dir /root/dev/flower_shop
-
-# Non-interactive mode (CI/scripting)
+# Non-interactive
 node scripts/onboard.js \
-  --work-dir /root/dev/flower_shop \
-  --name flower-shop \
-  --prefix FS \
-  --repo-url https://github.com/user/flower_shop \
+  --work-dir /root/dev/my_project \
+  --name my-project \
+  --prefix MP \
   --no-interactive
 
-# Skip CLAUDE.md generation
-node scripts/onboard.js --work-dir /root/dev/my_project --skip-claude-md
-
-# Dry run (показать что будет сделано)
+# Dry run
 node scripts/onboard.js --work-dir /root/dev/my_project --dry-run
 ```
 
@@ -243,106 +136,307 @@ node scripts/onboard.js --work-dir /root/dev/my_project --dry-run
 | `--prefix` | Префикс задач | Из имени (первые буквы, uppercase) |
 | `--repo-url` | Git remote URL | Из `git remote get-url origin` |
 | `--no-interactive` | Без вопросов | false |
-| `--skip-claude-md` | Не генерировать CLAUDE.md | false |
-| `--skip-permissions` | Не генерировать settings.local.json | false |
 | `--dry-run` | Показать план без выполнения | false |
 
-### 6. Файловая структура изменений
+**Структура, создаваемая в workDir проекта:**
+```
+.neuroforge/
+├── onboarding-checklist.md    # чеклист для LLM-агента
+└── project.json               # метаданные (projectId, prefix, slug)
+```
+
+### Шаблоны (`docs/templates/onboarding/`)
+
+Source of truth для онбординга. Скрипт копирует их в `.neuroforge/`, LLM читает и использует.
+
+#### `docs/templates/onboarding/CLAUDE.md.template`
+
+Шаблон CLAUDE.md с плейсхолдерами и инструкциями для LLM:
+
+```markdown
+# {{PROJECT_NAME}}
+
+<!-- LLM: замени {{плейсхолдеры}} реальными данными из проекта -->
+
+## Overview
+{{Описание проекта — из README.md или своими словами после анализа кода}}
+
+## Tech Stack
+{{Определи из package.json / composer.json / go.mod / pyproject.toml / Cargo.toml / pubspec.yaml / build.gradle.kts}}
+- **Runtime:** {{runtime}}
+- **Framework:** {{framework}}
+- **DB:** {{если есть}}
+- **Language:** {{language}}
+
+## Project Structure
+{{Сгенерируй дерево основных директорий, как в примере ниже}}
+```
+src/
+├── ...
+```
+
+## Запуск
+{{Команды для запуска, тестов, сборки — из package.json scripts / Makefile / README}}
+```bash
+# Dev
+{{dev command}}
+
+# Test
+{{test command}}
+
+# Build
+{{build command}}
+```
+
+## Task Manager (Нейроцех)
+
+Base URL: `http://localhost:3000`
+Project: `{{SLUG}}`
+Prefix: `{{PREFIX}}`
+
+```bash
+# Создать задачу
+curl -X POST http://localhost:3000/tasks \
+  -H "Authorization: Bearer $NF_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"projectId": "{{PROJECT_ID}}", "title": "...", "description": "..."}'
+```
+```
+
+#### `docs/templates/onboarding/onboarding-checklist.md`
+
+Чеклист, который LLM-агент проходит и отмечает:
+
+```markdown
+# Onboarding Checklist
+
+## Анализ проекта
+- [ ] Прочитать README.md
+- [ ] Определить стек (язык, фреймворк, БД, тесты)
+- [ ] Понять структуру директорий
+- [ ] Найти команды запуска (dev, test, build)
+
+## CLAUDE.md
+- [ ] Проверить: существует ли CLAUDE.md?
+  - Если да: дополнить секцией "Task Manager (Нейроцех)"
+  - Если нет: создать из шаблона, заполнив реальными данными
+- [ ] Убедиться что описание проекта актуально
+- [ ] Убедиться что структура директорий отражает реальность
+- [ ] Убедиться что команды запуска рабочие
+
+## .claude/settings.local.json
+- [ ] Создать/обновить с permissions для стека проекта:
+  - Всегда: git, ls, grep
+  - Node.js: npm, npx, node
+  - PHP: php, composer, ./vendor/bin/phpunit
+  - Python: python3, pip, pytest
+  - Go: go
+  - Swift: swift, xcodebuild
+  - Kotlin/Android: ./gradlew, adb
+  - Dart/Flutter: flutter, dart
+  - Docker: docker-compose
+
+## PROJECT_MAP.md
+- [ ] Если нет — создать карту основных модулей проекта
+- [ ] Если есть — проверить актуальность
+
+## Финализация
+- [ ] git add && git commit -m "chore: neuroforge onboarding" && git push
+```
+
+#### `docs/templates/onboarding/settings.local.template.json`
+
+Базовый шаблон permissions (LLM дополняет по стеку):
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(ls:*)",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep"
+    ]
+  }
+}
+```
+
+### Фаза 2: Onboarder Agent (роль `roles/onboarder.md`)
+
+Новая роль для Нейроцеха. Может запускаться как:
+- Автоматически через Нейроцех-пайплайн (задача типа "onboarding")
+- Вручную: `claude -p "Выполни онбординг проекта" --system-prompt roles/onboarder.md` из workDir
+
+**Роль:**
+
+```markdown
+---
+name: onboarder
+model: sonnet
+timeout_ms: 600000
+allowed_tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash
+---
+
+# Onboarder — Настройка проекта для Нейроцеха
+
+Ты настраиваешь проект для работы с Нейроцехом. Scaffold-скрипт уже создал
+`.neuroforge/` с метаданными и чеклистом. Твоя задача — проанализировать проект
+и создать/обновить конфигурационные файлы.
+
+## Процесс
+
+1. Прочитай `.neuroforge/project.json` — там projectId, slug, prefix
+2. Прочитай `.neuroforge/onboarding-checklist.md` — это твой план
+3. Проанализируй проект (README, конфиги, структуру)
+4. Выполни каждый пункт чеклиста, отмечая выполненные
+5. Закоммить и запушь результат
+
+## Правила
+
+- Если CLAUDE.md уже существует — НЕ перезаписывай. Дополни секцией Нейроцеха
+- Если .claude/settings.local.json существует — мержи permissions, не затирай
+- Не выдумывай то, чего не видишь в проекте. Если не можешь определить — оставь TODO
+- Будь лаконичным в CLAUDE.md — это рабочий документ, не документация
+- PROJECT_MAP.md — максимум 200 строк, только основные модули
+```
+
+### Project Registrar (`scripts/lib/projectRegistrar.js`)
+
+Переиспользует существующие entity и repo:
+
+```js
+class ProjectRegistrar {
+  constructor({ pool })
+
+  async register({ name, prefix, repoUrl, workDir }) → {
+    project,    // Project entity
+    user,       // User entity
+    apiKey: {   // { id, name, token (raw!) }
+      id, name, token
+    }
+  }
+}
+```
+
+**Логика:**
+1. `Project.create({name, prefix, repoUrl, workDir})` → `projectRepo.save()`
+2. `User.create({name: \`${slug}-agent\`, role: 'member'})` → `userRepo.save()`
+3. `ApiKey.create(...)` → `apiKeyRepo.save()`, вернуть raw token
+
+### Файловая структура изменений
 
 ```
-scripts/
-├── onboard.js                          # CLI entry point
-└── lib/
-    ├── claudeMdGenerator.js            # CLAUDE.md template + generation
-    ├── permissionsGenerator.js         # .claude/settings.local.json generation
-    └── projectRegistrar.js             # DB registration (project + user + api key)
+docs/templates/onboarding/              # NEW — шаблоны для онбординга
+├── CLAUDE.md.template                  # шаблон CLAUDE.md с плейсхолдерами
+├── onboarding-checklist.md             # чеклист для LLM-агента
+└── settings.local.template.json        # базовые permissions
 
-src/domain/
-├── services/
-│   └── StackDetector.js                # Stack detection heuristics
-└── valueObjects/
-    └── DetectedStack.js                # Detected stack value object
+roles/
+└── onboarder.md                        # NEW — роль онбордера
+
+scripts/
+├── onboard.js                          # NEW — CLI scaffold-скрипт
+└── lib/
+    └── projectRegistrar.js             # NEW — регистрация в БД
 ```
 
 ## Изменения по слоям
 
 ### Domain Layer
-| Что | Файл | Действие |
-|-----|------|----------|
-| StackDetector service | `src/domain/services/StackDetector.js` | CREATE |
-| DetectedStack VO | `src/domain/valueObjects/DetectedStack.js` | CREATE |
+Нет изменений. Используем существующие Project, User, ApiKey entity.
+
+### Application Layer
+Нет изменений. Скрипт работает напрямую с domain + infrastructure.
 
 ### Infrastructure Layer
 Нет изменений. Используем существующие PgProjectRepo, PgUserRepo, PgApiKeyRepo.
 
-### Application Layer
-Нет изменений. Скрипт работает напрямую с domain + infrastructure, минуя application use cases (это утилита, не бизнес-процесс).
-
 ### Scripts (новый слой)
 | Что | Файл | Действие |
 |-----|------|----------|
-| CLI entry point | `scripts/onboard.js` | CREATE |
-| CLAUDE.md generator | `scripts/lib/claudeMdGenerator.js` | CREATE |
-| Permissions generator | `scripts/lib/permissionsGenerator.js` | CREATE |
-| Project registrar | `scripts/lib/projectRegistrar.js` | CREATE |
+| CLI scaffold | `scripts/onboard.js` | CREATE |
+| DB registrar | `scripts/lib/projectRegistrar.js` | CREATE |
+
+### Roles
+| Что | Файл | Действие |
+|-----|------|----------|
+| Onboarder role | `roles/onboarder.md` | CREATE |
+
+### Templates
+| Что | Файл | Действие |
+|-----|------|----------|
+| CLAUDE.md template | `docs/templates/onboarding/CLAUDE.md.template` | CREATE |
+| Checklist | `docs/templates/onboarding/onboarding-checklist.md` | CREATE |
+| Settings template | `docs/templates/onboarding/settings.local.template.json` | CREATE |
 
 ### Критичные файлы оркестрации
-Изменения НЕ требуются. Скрипт автономный, не модифицирует index.js, scheduler, claudeCLIAdapter.
+Изменения НЕ требуются.
 
-## Переносимость для любого стека
+## Как это работает: пример
 
-Ключевое решение: **StackDetector** основан на file-based heuristics (наличие конфигурационных файлов), а не на запуске инструментов. Это означает:
-- Не нужен установленный PHP для обнаружения Symfony-проекта
-- Не нужен Go для обнаружения Go-проекта
-- Достаточно файловой системы
+```bash
+# 1. Scaffold
+$ node scripts/onboard.js --work-dir /root/dev/flower_shop
 
-**CLAUDE.md** генерируется из шаблона с переменными. Шаблон содержит общую структуру, а stack-specific секции подставляются по результатам детекции.
+  Проект:   flower-shop
+  Префикс:  FS
+  Repo:     https://github.com/user/flower_shop
+  workDir:  /root/dev/flower_shop
 
-**Permissions** подбираются по стеку. Для неизвестного стека — минимальный набор (git, ls, grep).
+  Подтвердить? [Y/n] y
+
+  ✅ Проект зарегистрирован в БД
+  ✅ .neuroforge/ создана
+  🔑 API Key: nf_abc123... (сохраните, больше не покажем)
+
+  Следующий шаг — запустите онбордер:
+  cd /root/dev/flower_shop && claude -p "Выполни онбординг" --system-prompt /root/dev/neuroforge/roles/onboarder.md
+
+# 2. LLM-агент анализирует проект и создаёт:
+#    - CLAUDE.md (или дополняет существующий)
+#    - .claude/settings.local.json
+#    - PROJECT_MAP.md
+#    - Коммитит и пушит
+```
 
 ## Тесты
 
 ### Unit Tests
 
-1. **StackDetector.test.js**
-   - Обнаружение Node.js проекта (package.json)
-   - Обнаружение PHP проекта (composer.json)
-   - Обнаружение Python проекта (requirements.txt, pyproject.toml)
-   - Обнаружение Go проекта (go.mod)
-   - Monorepo detection (несколько package.json)
-   - Unknown stack (пустая директория)
-   - README.md description extraction
-
-2. **DetectedStack.test.js**
-   - Создание из корректных данных
-   - Default values для optional полей
-
-3. **claudeMdGenerator.test.js**
-   - Генерация для Node.js стека
-   - Генерация для PHP стека
-   - Генерация для unknown стека
-   - Подстановка projectId, slug, prefix
-
-4. **permissionsGenerator.test.js**
-   - Permissions для Node.js
-   - Permissions для PHP
-   - Permissions для unknown
-   - Merge с существующими permissions
-
-5. **projectRegistrar.test.js**
+1. **projectRegistrar.test.js**
    - Успешная регистрация (project + user + apiKey)
    - Duplicate name → ошибка
    - Duplicate prefix → ошибка
 
+2. **onboard.test.js** (скрипт)
+   - Парсинг аргументов (--work-dir, --name, --prefix)
+   - Auto-detect name из директории
+   - Auto-detect repoUrl из git remote
+   - Dry run: ничего не меняется в БД и FS
+   - Создание структуры .neuroforge/
+   - Копирование шаблонов
+
 ### Integration Tests
 
-6. **onboard.integration.test.js** (с реальной БД)
-   - Full flow: detect → register → generate files
-   - Dry run: ничего не меняется
+3. **onboard.integration.test.js** (с реальной БД)
+   - Full scaffold flow: validate → register → create structure
    - Идемпотентность: повторный запуск → понятная ошибка
+   - Несуществующий workDir → ошибка
+
+### Тестирование LLM-агента
+Onboarder тестируется вручную на реальных проектах. Автотесты для LLM-фазы не нужны — результат проверяется reviewer'ом или пользователем.
 
 ## Открытые вопросы
 
-1. **Нужен ли `npm run onboard` alias в package.json?** — Рекомендую: да.
-2. **Нужна ли деонбординг/удаление проекта?** — Out of scope, но стоит учесть в будущем.
-3. **Нужно ли обновлять PROJECT_MAP.md из скрипта?** — Нет, это задача аналитика после добавления новых модулей.
+1. **`npm run onboard` alias?** — Да, добавить в package.json.
+2. **Запуск онбордера через API?** — Out of scope. Пока ручной запуск через CLI.
+3. **Деонбординг/удаление проекта?** — Out of scope.

@@ -62,7 +62,7 @@ docs/analyst/<shortId>/
 **Не раскидывай файлы по корню проекта.** Всё строго в `docs/analyst/<shortId>/`.
 
 ## Git
-- После создания артефактов — коммить: `git add docs/analyst/<shortId>/ && git commit -m "<shortId>: research and spec"`
+- После создания артефактов — коммить и пушь: `git add docs/analyst/<shortId>/ && git commit -m "<shortId>: research and spec" && git push`
 - Коммиты с префиксом shortId задачи: `NF-9: описание`
 - НЕ добавлять Co-Authored-By в коммиты
 - НЕ упоминать Anthropic/Claude в коммитах
