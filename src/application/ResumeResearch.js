@@ -1,4 +1,5 @@
 import { InvalidStateError } from '../domain/errors/InvalidStateError.js';
+import { ValidationError } from '../domain/errors/ValidationError.js';
 
 export class ResumeResearch {
   #taskService;
@@ -31,7 +32,7 @@ export class ResumeResearch {
     }
 
     if (!instruction || !instruction.trim()) {
-      throw new InvalidStateError('instruction is required');
+      throw new ValidationError('instruction is required');
     }
 
     // Atomically activate (research_done → in_progress) — fails if another task is active
@@ -47,19 +48,22 @@ export class ResumeResearch {
 
     // Get previous analyst's research for context
     const allRuns = await this.#runRepo.findByTaskId(task.id);
+    const analystRoles = ['analyst', 'implementer'];
     const lastAnalystRun = [...allRuns]
-      .filter(r => r.roleName === 'analyst' && r.status === 'done')
+      .filter(r => analystRoles.includes(r.roleName) && r.status === 'done')
       .sort((a, b) => b.createdAt - a.createdAt)[0];
 
     const researchContext = lastAnalystRun?.response
       ? `\n\nРезультаты предыдущего исследования (аналитик):\n${lastAnalystRun.response.substring(0, 10000)}`
       : '';
 
-    // Enqueue developer with research context + owner instruction
-    const roleName = 'developer';
+    // Enqueue developer phase with research context + owner instruction
+    const roleName = this.#roleRegistry.has('implementer') ? 'implementer' : 'developer';
     this.#roleRegistry.get(roleName);
 
-    const prompt = `Задача: ${task.title}
+    const prompt = `Фаза: developer.
+
+Задача: ${task.title}
 Описание: ${task.description ?? 'нет'}
 ${researchContext}
 

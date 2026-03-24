@@ -9,9 +9,9 @@ const ROLES_DIR = resolve(__dirname, '../../../roles');
 
 describe('FileRoleLoader', () => {
   describe('loadRoles()', () => {
-    it('should load all 9 role files from roles/', async () => {
+    it('should load all 12 role files from roles/', async () => {
       const roles = await loadRoles(ROLES_DIR);
-      expect(roles).toHaveLength(9);
+      expect(roles).toHaveLength(12);
       roles.forEach((r) => expect(r).toBeInstanceOf(Role));
     });
 
@@ -23,7 +23,10 @@ describe('FileRoleLoader', () => {
         'cto',
         'default',
         'developer',
+        'implementer',
         'manager',
+        'pm',
+        'reviewer',
         'reviewer-architecture',
         'reviewer-business',
         'reviewer-security',

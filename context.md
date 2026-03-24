@@ -1,66 +1,122 @@
-# Task Context
+# Task Context — Pipeline v2
 
 ## Затрагиваемые файлы
 
-### Neuroforge (backend)
+### Application Layer (основные изменения)
 
-**`src/domain/valueObjects/TaskMode.js`** — Value object для режимов задачи
-- `MODES = { FULL: 'full', RESEARCH: 'research' }` — добавить `AUTO: 'auto'`
-- `isValidMode(mode)` — проверяет принадлежность к MODES
+**`src/application/ManagerDecision.js`** — центральный файл рефакторинга (620 строк)
+- `execute({completedRunId})` — entry point, вызывается Worker после каждого run
+- `#handleResearchMode()` — research mode auto-complete (сохраняется)
+- `#handleDevFixComplete()` — re-review после dev fix (переписать)
+- `#handleReviewFindings()` — review severity routing (переписать → unified reviewer)
+- `buildManagerPrompt()` — промпт для manager LLM (заменить на `buildPmDeltaPrompt()`)
+- `parseManagerDecision()` — парсинг JSON ответа (сохраняется для PM LLM fallback)
+- `buildFixPrompt()`, `buildReReviewPrompt()` — промпты для revision (сохраняются)
+- `REVIEWER_ROLES = ['reviewer-architecture', 'reviewer-business', 'reviewer-security']` — заменить на `['reviewer']`
+- Exported: `{ buildManagerPrompt, parseManagerDecision, buildFixPrompt, buildReReviewPrompt }`
 
-**`src/domain/entities/Task.js`** — Task entity
-- `constructor()` строка 43: `this.mode = mode ?? 'full'` → менять default на `'auto'`
-- `static create()` строка 56: `const validatedMode = mode ?? 'full'` → `'auto'`
-- `static fromRow()` строка 109: `mode: row.mode ?? 'full'` → `'auto'`
-- `isValidMode` импортируется из TaskMode.js, используется в create() для валидации
+**`src/application/ProcessRun.js`** — выполнение run'а (147 строк)
+- `execute()` — takeNext → session → gitOps → chatEngine.runPrompt → complete
+- Строки 53-64: session lookup + developer-inherits-analyst хак → переписать на `findOrCreateForTask(taskId, roleName)`
+- `this.#sessionRepo.findOrCreate(projectId, roleName)` → `findOrCreateForTask(run.taskId, run.roleName)`
 
-**`src/infrastructure/http/routes/taskRoutes.js`** — API route schemas
-- `createTaskSchema.body.properties.mode` строка 14: `enum: ['full', 'research'], default: 'full'` → добавить `'auto'`, default `'auto'`
+**`src/application/CreateTask.js`** — создание задачи (103 строки)
+- Строка 82-91: enqueue analyst → заменить на enqueue implementer(stepId=analyst)
+- `roleName: 'analyst'` → `roleName: 'implementer'`, `stepId: 'analyst'`
 
-**`src/application/ManagerDecision.js`** — Оркестрация пайплайна
-- `#handleResearchMode()` строка 264: `if (task.mode !== 'research') return null` — `auto` и `full` оба возвращают null → идут в LLM. Изменений НЕ нужно.
-- `buildManagerPrompt()` строка 458: `Режим: ${task.mode ?? 'full'}` — будет показывать 'auto'. OK.
+**`src/application/StartNextPendingTask.js`** — активация pending задачи
+- Аналогично CreateTask: enqueue implementer(analyst)
 
-### mybot (клиент)
+**`src/application/ReplyToQuestion.js`** — ответ на вопрос владельца
+- Строка: enqueue(lastRun.roleName, prompt) — сохраняется (resume ту же роль)
 
-**`/root/bot/mybot/src/infrastructure/neuroforge/NeuroforgeClient.js`** — HTTP клиент
-- `createTask(projectId, title, description, callbackUrl, callbackMeta)` строка 27 — добавить 6-й параметр `options = {}`
-- `_request('POST', '/tasks', body)` — добавить `mode` из options в body
+**`src/application/RestartTask.js`** — перезапуск failed задачи
+- Перезапуск: enqueue implementer(analyst) если нет completed runs
 
-**`/root/bot/mybot/src/infrastructure/telegram/handlers/commandHandler.js`** — TG команды
-- `bot.command('task', ...)` строка 392 — без изменений (не передаёт mode → default auto)
-- Добавить `bot.command('research', ...)` — аналог task, но передаёт `{ mode: 'research' }`
+**`src/application/ResumeResearch.js`** — resume research_done задачи
+- `roleName: 'developer'` → `roleName: 'implementer'`, `stepId: 'developer'`
+
+### Domain Layer
+
+**`src/domain/entities/Session.js`** — Session entity (85 строк)
+- constructor: добавить `taskId` поле
+- `static create()`: добавить `taskId` параметр
+- `fromRow()` / `toRow()`: добавить `task_id` mapping
+
+**`src/domain/entities/Run.js`** — Run entity
+- `stepId` поле уже существует — используется для фазы (analyst/developer/fix/review)
+- Без изменений в entity
+
+**`src/domain/valueObjects/ReviewFindings.js`** — парсинг review findings
+- `parse(response, reviewerRole)` — без изменений (формат VERDICT/FINDINGS/SUMMARY сохраняется)
+- `parseAll(reviewerRuns)` — работает для 1 reviewer так же как для 3
+
+**`src/domain/ports/IGitOps.js`** — Git operations порт
+- Добавить `mergeBranch(branchName, workDir)` метод
+
+### Infrastructure Layer
+
+**`src/infrastructure/persistence/PgSessionRepo.js`** — Session persistence (86 строк)
+- `findOrCreate(projectId, roleName)` — сохраняется для backward compat
+- Добавить `findOrCreateForTask(taskId, roleName)` — atomic upsert по (task_id, role_name)
+
+**`src/infrastructure/git/gitCLIAdapter.js`** — Git CLI adapter
+- Добавить `mergeBranch(branchName, workDir)` — checkout main + merge + push + delete branch
+
+**`src/index.js`** — **Критичный файл.** Composition root
+- Передать `gitOps` и `workDir` в ManagerDecision
+
+### Roles (новые/изменённые)
+
+- `roles/implementer.md` — **НОВЫЙ**: объединённый analyst+developer system prompt (opus)
+- `roles/reviewer.md` — **НОВЫЙ**: unified чеклист arch+business+security (sonnet)
+- `roles/pm.md` — **НОВЫЙ**: PM для LLM fallback (sonnet)
+- `roles/analyst.md` — убрать создание ветки (reference only)
+- `roles/developer.md` — добавить тестирование (reference only)
 
 ## Ключевые сигнатуры
 
 ```javascript
-// TaskMode.js
-const MODES = { FULL: 'full', RESEARCH: 'research', AUTO: 'auto' };
-function isValidMode(mode): boolean;
+// ManagerDecision — новые приватные методы
+#routePipeline(task, completedRun, allRuns): Promise<object|null>
+#afterAnalystDone(task, completedRun, allRuns): Promise<object>
+#afterDeveloperDone(task, completedRun, allRuns): Promise<object>
+#afterReviewerDone(task, completedRun, allRuns): Promise<object>
+#mergeAndComplete(task): Promise<object>
+#callPmLlm(task, completedRun, allRuns): Promise<object>
 
-// Task.js
-static create({ projectId, title, description, callbackUrl, callbackMeta, seqNumber, status, mode }): Task
+// PgSessionRepo — новый метод
+findOrCreateForTask(taskId, roleName): Promise<Session>
 
-// CreateTask.js — уже принимает mode, пробрасывает в taskService.createTask()
-async execute({ projectId, title, description, callbackUrl, callbackMeta, status, mode }): Promise
+// GitCLIAdapter — новый метод
+mergeBranch(branchName, workDir): Promise<void>
 
-// NeuroforgeClient.js (mybot)
-async createTask(projectId, title, description, callbackUrl, callbackMeta, options = {}): Promise
+// Run — существующие поля (используются для фазы)
+run.roleName  // 'implementer', 'reviewer', 'pm'
+run.stepId    // 'analyst', 'developer', 'fix', 'review', 'init'
 ```
 
 ## Зависимости
 
 ```
-taskRoutes.js → CreateTask.execute({mode}) → TaskService.createTask({mode}) → Task.create({mode})
-                                                                                    ↓
-                                                                              isValidMode(mode) ← TaskMode.js
-ManagerDecision → #handleResearchMode() → checks task.mode === 'research' only
+Worker.processOne() → ProcessRun.execute() → ManagerDecision.execute()
+                           ↓                        ↓
+                    PgSessionRepo          #routePipeline() → enqueue next
+                    .findOrCreateForTask()  #callPmLlm() → chatEngine.runPrompt('pm')
+                           ↓               #mergeAndComplete() → gitOps.mergeBranch()
+                    ClaudeCLIAdapter
+                    .runPrompt(--resume)
 ```
 
-## Текущее поведение
+## Текущее поведение (что меняется)
 
-1. API default mode = `'full'` (в schema и entity)
-2. `#handleResearchMode()` срабатывает ТОЛЬКО при `mode === 'research'`
-3. Для `mode === 'full'` → менеджер LLM решает пайплайн (стандартный flow)
-4. mybot НЕ передаёт mode → всегда default `'full'`
-5. Добавление `auto` с тем же поведением что `full` — backward compatible
+| Аспект | v1 (текущий) | v2 (целевой) |
+|--------|-------------|-------------|
+| Первый run | analyst | implementer (stepId=analyst) |
+| Session scope | project + role | task + role |
+| Developer context | хак: наследует analyst session | нативный: та же session (implementer) |
+| Reviewers | 3 параллельных (sonnet ×3) | 1 unified (sonnet) |
+| Merge | CTO агент (opus LLM) | gitOps.mergeBranch() в ManagerDecision |
+| Tester | Отдельный агент | Developer пишет тесты сам |
+| Manager routing | LLM каждый шаг | Детерминистический + LLM fallback |
+| Manager prompt | Вся история runs | Дельта (только последний результат) |
