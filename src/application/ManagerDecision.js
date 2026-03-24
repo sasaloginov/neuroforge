@@ -248,7 +248,7 @@ FAIL = есть CRITICAL/MAJOR/HIGH. PASS = только MINOR/LOW или нет
 
     // Extract verdicts from all reviewer runs
     const verdicts = reviewerRuns.map(r => {
-      const match = (r.response || '').match(/\bVERDICT\s*:\s*(PASS|FAIL)\b/i);
+      const match = (r.response || '').match(/VERDICT\s*:\s*\*{0,2}(PASS|FAIL)\*{0,2}/i);
       return match ? match[1].toUpperCase() : null;
     });
     const hasFailVerdict = verdicts.includes('FAIL');
