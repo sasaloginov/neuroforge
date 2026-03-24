@@ -37,10 +37,10 @@ allowed_tools:
 
 ## Стандартный пайплайн
 1. `implementer` (Фаза: analyst) → исследование, spec, context.md
-2. `implementer` (Фаза: developer, --resume) → код + тесты
-3. `reviewer` → ревью по git diff
-4. Если FAIL → `implementer` (Фаза: fix, --resume) → исправления → `reviewer` (--resume)
-5. Если PASS → merge + complete
+3. `implementer` (Фаза: developer, --resume) → код + тесты
+4. `reviewer` → ревью по git diff
+5. Если FAIL → `implementer` (Фаза: fix, --resume) → исправления → `reviewer` (--resume)
+6. Если PASS → merge + complete
 
 ## Детерминистические решения (код обрабатывает автоматически)
 - analyst_done → developer phase (resume implementer session)
