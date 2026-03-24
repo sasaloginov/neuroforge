@@ -50,15 +50,14 @@ export class RestartTask {
 
     // No terminal runs — start from scratch with analyst phase
     if (terminalRuns.length === 0) {
-      const roleName = this.#roleRegistry.has('implementer') ? 'implementer' : 'analyst';
       await this.#runService.enqueue({
         taskId,
-        roleName,
+        roleName: 'analyst',
         prompt: `Фаза: analyst.\n\nИсследуй и спроектируй задачу: ${task.title}\n\n${task.description || ''}`,
         callbackUrl: task.callbackUrl,
         callbackMeta: task.callbackMeta,
       });
-      return { taskId, shortId, status: 'in_progress', decision: { action: 'spawn_run', role: roleName } };
+      return { taskId, shortId, status: 'in_progress', decision: { action: 'spawn_run', role: 'analyst' } };
     }
 
     // Let manager decide next step based on run history

@@ -106,15 +106,13 @@ export class ManagerDecision {
 
     const role = lastRun.roleName;
 
-    // 1. analyst_done → developer phase (--resume implementer session)
-    // Also handles legacy analyst role and implementer without explicit phase prefix
-    if (role === 'analyst' || (role === 'implementer' && this.#isAnalystPhase(lastRun))) {
+    // 1. analyst_done → developer phase (--resume analyst session)
+    if (role === 'analyst') {
       return this.#transitionToDeveloper(task, lastRun);
     }
 
     // 2. developer_done → reviewer
-    // Also handles legacy developer role and implementer in dev/fix phase
-    if (role === 'developer' || (role === 'implementer' && this.#isDeveloperPhase(lastRun))) {
+    if (role === 'developer') {
       // Check for re-review after fix
       const devFixResult = await this.#handleDevFixComplete(task, allRuns);
       if (devFixResult) return devFixResult;
@@ -127,14 +125,9 @@ export class ManagerDecision {
       return this.#handleReviewComplete(task, allRuns);
     }
 
-    // 4. Legacy roles (tester, cto) — handle gracefully for in-flight tasks during deploy.
-    //    tester_done → treat like reviewer PASS (tests passed = move forward)
-    //    cto_done → treat like merge approval
+    // 4. Legacy role: tester_done → treat like reviewer PASS
     if (role === 'tester') {
       return this.#transitionToReviewer(task);
-    }
-    if (role === 'cto') {
-      return this.#mergeAndComplete(task);
     }
 
     return null;
@@ -144,7 +137,7 @@ export class ManagerDecision {
    * analyst_done → spawn developer phase (resume implementer session).
    */
   async #transitionToDeveloper(task, analystRun) {
-    const roleName = this.#roleRegistry.has('implementer') ? 'implementer' : 'developer';
+    const roleName = 'developer';
 
     const prompt = `Фаза: developer.
 
@@ -182,7 +175,7 @@ export class ManagerDecision {
    * The prompt here provides task context — the role's system prompt handles review methodology.
    */
   async #transitionToReviewer(task) {
-    const roleName = this.#roleRegistry.has('reviewer') ? 'reviewer' : 'reviewer-architecture';
+    const roleName = 'reviewer';
 
     const prompt = `Задача: ${task.shortId ?? ''} ${task.title}
 Описание: ${task.description ?? 'нет'}
@@ -236,9 +229,9 @@ FAIL = есть CRITICAL/MAJOR/HIGH. PASS = только MINOR/LOW или нет
       .filter(r => ['done', 'failed', 'timeout', 'interrupted'].includes(r.status))
       .sort((a, b) => a.createdAt - b.createdAt);
 
-    // Find the last developer/implementer run
+    // Find the last developer run
     const lastDevRun = [...completedRuns].reverse().find(
-      r => r.roleName === 'developer' || (r.roleName === 'implementer' && this.#isDeveloperPhase(r)),
+      r => r.roleName === 'developer',
     );
     if (!lastDevRun) return null;
 
@@ -300,12 +293,11 @@ FAIL = есть CRITICAL/MAJOR/HIGH. PASS = только MINOR/LOW или нет
     await this.#taskService.incrementRevision(task.id);
 
     const fixPrompt = buildFixPrompt(task, actionableFindings);
-    const roleName = this.#roleRegistry.has('implementer') ? 'implementer' : 'developer';
 
     await this.#runService.enqueue({
       taskId: task.id,
       stepId: null,
-      roleName,
+      roleName: 'developer',
       prompt: fixPrompt,
       callbackUrl: task.callbackUrl,
       callbackMeta: task.callbackMeta,
@@ -348,15 +340,13 @@ FAIL = есть CRITICAL/MAJOR/HIGH. PASS = только MINOR/LOW или нет
     const lastRun = completedRuns[completedRuns.length - 1];
     if (!lastRun) return null;
 
-    // Only trigger if last run is developer/implementer in developer phase
-    const isDevRun = lastRun.roleName === 'developer'
-      || (lastRun.roleName === 'implementer' && this.#isDeveloperPhase(lastRun));
-    if (!isDevRun) return null;
+    // Only trigger if last run is developer
+    if (lastRun.roleName !== 'developer') return null;
 
     // Find previous reviewer runs that had findings
     const prevDevRun = [...completedRuns]
       .reverse()
-      .find(r => (r.roleName === 'developer' || r.roleName === 'implementer') && r.id !== lastRun.id);
+      .find(r => r.roleName === 'developer' && r.id !== lastRun.id);
 
     const reviewerRuns = completedRuns.filter(
       r => REVIEWER_ROLES.includes(r.roleName)
@@ -372,31 +362,16 @@ FAIL = есть CRITICAL/MAJOR/HIGH. PASS = только MINOR/LOW или нет
 
     // Enqueue re-review
     const reReviewPrompt = buildReReviewPrompt(task);
-    const reviewerRole = this.#roleRegistry.has('reviewer') ? 'reviewer' : reviewersWithIssues[0];
+    const reviewerRole = 'reviewer';
 
-    if (this.#roleRegistry.has('reviewer')) {
-      // Unified reviewer: enqueue single re-review
-      await this.#runService.enqueue({
-        taskId: task.id,
-        stepId: null,
-        roleName: 'reviewer',
-        prompt: reReviewPrompt,
-        callbackUrl: task.callbackUrl,
-        callbackMeta: task.callbackMeta,
-      });
-    } else {
-      // Legacy: enqueue re-review for each reviewer that had issues
-      for (const role of reviewersWithIssues) {
-        await this.#runService.enqueue({
-          taskId: task.id,
-          stepId: null,
-          roleName: role,
-          prompt: reReviewPrompt,
-          callbackUrl: task.callbackUrl,
-          callbackMeta: task.callbackMeta,
-        });
-      }
-    }
+    await this.#runService.enqueue({
+      taskId: task.id,
+      stepId: null,
+      roleName: 'reviewer',
+      prompt: reReviewPrompt,
+      callbackUrl: task.callbackUrl,
+      callbackMeta: task.callbackMeta,
+    });
 
     this.#logger.info('[ManagerDecision] Dev fix complete, enqueued re-review');
 
@@ -459,10 +434,10 @@ FAIL = есть CRITICAL/MAJOR/HIGH. PASS = только MINOR/LOW или нет
     const completedRuns = allRuns
       .filter(r => ['done', 'failed', 'timeout', 'interrupted'].includes(r.status));
 
-    // Find last analyst/implementer run
+    // Find last analyst run
     const lastAnalystRun = [...completedRuns]
       .reverse()
-      .find(r => r.roleName === 'analyst' || r.roleName === 'implementer');
+      .find(r => r.roleName === 'analyst');
 
     if (!lastAnalystRun) return null;
 
@@ -572,8 +547,7 @@ FAIL = есть CRITICAL/MAJOR/HIGH. PASS = только MINOR/LOW или нет
           this.#roleRegistry.get(decision.role); // validate role exists
 
           // Check revision limit if re-spawning developer after a previous developer run
-          const devRoles = ['developer', 'implementer'];
-          if (devRoles.includes(decision.role) && allRuns.some(r => devRoles.includes(r.roleName) && r.status === 'done')) {
+          if (decision.role === 'developer' && allRuns.some(r => r.roleName === 'developer' && r.status === 'done')) {
             await this.#taskService.incrementRevision(task.id);
           }
 
@@ -608,9 +582,8 @@ FAIL = есть CRITICAL/MAJOR/HIGH. PASS = только MINOR/LOW или нет
             this.#roleRegistry.get(runDef.role);
           }
 
-          const devRoles = ['developer', 'implementer'];
-          const hasDevRun = decision.runs.some(r => devRoles.includes(r.role));
-          if (hasDevRun && allRuns.some(r => devRoles.includes(r.roleName) && r.status === 'done')) {
+          const hasDevRun = decision.runs.some(r => r.role === 'developer');
+          if (hasDevRun && allRuns.some(r => r.roleName === 'developer' && r.status === 'done')) {
             await this.#taskService.incrementRevision(task.id);
           }
 
@@ -718,22 +691,6 @@ FAIL = есть CRITICAL/MAJOR/HIGH. PASS = только MINOR/LOW или нет
     }
   }
 
-  /** Check if an implementer run was in analyst phase. */
-  #isAnalystPhase(run) {
-    if (run.roleName !== 'implementer') return false;
-    const prompt = run.prompt ?? '';
-    // Explicit analyst phase marker at start of prompt
-    if (prompt.startsWith('Фаза: analyst')) return true;
-    // Legacy: no phase prefix at all → treat as analyst (backward compat for in-flight tasks)
-    return !prompt.startsWith('Фаза: developer') && !prompt.startsWith('Фаза: fix');
-  }
-
-  /** Check if an implementer run was in developer phase. */
-  #isDeveloperPhase(run) {
-    if (run.roleName !== 'implementer') return false;
-    const prompt = run.prompt ?? '';
-    return prompt.startsWith('Фаза: developer') || prompt.startsWith('Фаза: fix');
-  }
 }
 
 /**

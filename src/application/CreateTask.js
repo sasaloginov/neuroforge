@@ -9,14 +9,18 @@ export class CreateTask {
   #projectRepo;
   #taskRepo;
   #callbackSender;
+  #gitOps;
+  #workDir;
 
-  constructor({ taskService, runService, roleRegistry, projectRepo, taskRepo, callbackSender }) {
+  constructor({ taskService, runService, roleRegistry, projectRepo, taskRepo, callbackSender, gitOps, workDir }) {
     this.#taskService = taskService;
     this.#runService = runService;
     this.#roleRegistry = roleRegistry;
     this.#projectRepo = projectRepo;
     this.#taskRepo = taskRepo;
     this.#callbackSender = callbackSender;
+    this.#gitOps = gitOps || null;
+    this.#workDir = workDir || null;
   }
 
   async execute({ projectId, title, description, callbackUrl, callbackMeta, status, mode }) {
@@ -26,9 +30,8 @@ export class CreateTask {
     const project = await this.#projectRepo.findById(projectId);
     if (!project) throw new ProjectNotFoundError(projectId);
 
-    // Validate analyst/implementer role exists (needed for non-backlog tasks)
-    const analystRole = this.#roleRegistry.has('implementer') ? 'implementer' : 'analyst';
-    this.#roleRegistry.get(analystRole);
+    // Validate analyst role exists (needed for non-backlog tasks)
+    this.#roleRegistry.get('analyst');
 
     const task = await this.#taskService.createTask({
       projectId,
@@ -79,6 +82,12 @@ export class CreateTask {
       return { taskId: task.id, shortId, branchName: task.branchName, status: 'pending' };
     }
 
+    // Create git branch before starting work
+    if (this.#gitOps && this.#workDir && task.branchName) {
+      const projectWorkDir = project.workDir || this.#workDir;
+      await this.#gitOps.ensureBranch(task.branchName, projectWorkDir);
+    }
+
     // Activated — enqueue analyst phase
     const prompt = `Фаза: analyst.
 
@@ -92,7 +101,7 @@ ${description ?? ''}
     await this.#runService.enqueue({
       taskId: task.id,
       stepId: null,
-      roleName: analystRole,
+      roleName: 'analyst',
       prompt,
       callbackUrl,
       callbackMeta,
