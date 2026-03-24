@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { parseArgs, deriveSlug, derivePrefix, validate, scaffoldStructure } from './onboard.js';
+import { parseArgs, deriveSlug, derivePrefix, isValidRepoUrl, validate, scaffoldStructure } from './onboard.js';
 
 describe('parseArgs', () => {
   it('parses --work-dir', () => {
@@ -116,6 +116,56 @@ describe('validate', () => {
   it('returns error for missing repoUrl', () => {
     const errors = validate({ workDir: '/root/dev', name: 'test', prefix: 'TP', repoUrl: null });
     expect(errors).toContainEqual(expect.stringContaining('repo URL'));
+  });
+
+  it('returns error for invalid repoUrl format', () => {
+    const errors = validate({ workDir: '/root/dev', name: 'test', prefix: 'TP', repoUrl: 'not-a-url' });
+    expect(errors).toContainEqual(expect.stringContaining('Invalid repo URL'));
+  });
+
+  it('accepts https repo URL', () => {
+    const errors = validate({ workDir: '/root/dev', name: 'test', prefix: 'TP', repoUrl: 'https://github.com/user/repo' });
+    expect(errors).toEqual([]);
+  });
+
+  it('accepts SSH SCP-style repo URL', () => {
+    const errors = validate({ workDir: '/root/dev', name: 'test', prefix: 'TP', repoUrl: 'git@github.com:user/repo.git' });
+    expect(errors).toEqual([]);
+  });
+
+  it('accepts git:// protocol repo URL', () => {
+    const errors = validate({ workDir: '/root/dev', name: 'test', prefix: 'TP', repoUrl: 'git://github.com/user/repo.git' });
+    expect(errors).toEqual([]);
+  });
+});
+
+describe('isValidRepoUrl', () => {
+  it('accepts https URLs', () => {
+    expect(isValidRepoUrl('https://github.com/user/repo')).toBe(true);
+  });
+
+  it('accepts http URLs', () => {
+    expect(isValidRepoUrl('http://gitlab.internal/repo')).toBe(true);
+  });
+
+  it('accepts git@ SCP-style', () => {
+    expect(isValidRepoUrl('git@github.com:user/repo.git')).toBe(true);
+  });
+
+  it('accepts ssh:// URLs', () => {
+    expect(isValidRepoUrl('ssh://git@github.com/user/repo.git')).toBe(true);
+  });
+
+  it('accepts git:// URLs', () => {
+    expect(isValidRepoUrl('git://github.com/user/repo.git')).toBe(true);
+  });
+
+  it('rejects plain strings', () => {
+    expect(isValidRepoUrl('not-a-url')).toBe(false);
+  });
+
+  it('rejects file paths', () => {
+    expect(isValidRepoUrl('/home/user/repo')).toBe(false);
   });
 });
 

@@ -124,6 +124,11 @@ function derivePrefix(slug) {
   return prefix.slice(0, 5);
 }
 
+function isValidRepoUrl(url) {
+  // Accept https://, git://, ssh://, or git@host:path (SCP-style)
+  return /^(https?:\/\/|git:\/\/|ssh:\/\/|git@[\w.-]+:)/.test(url);
+}
+
 // --- Interactive prompt ---
 
 function ask(rl, question) {
@@ -206,6 +211,8 @@ function validate(params) {
 
   if (!params.repoUrl) {
     errors.push('Could not detect repo URL. Use --repo-url or run from a git directory.');
+  } else if (!isValidRepoUrl(params.repoUrl)) {
+    errors.push(`Invalid repo URL "${params.repoUrl}". Expected https://, git://, or ssh:// URL.`);
   }
 
   return errors;
@@ -298,7 +305,7 @@ async function main() {
     console.log('  (save it — it will not be shown again)');
     console.log();
     console.log('  Next step — run the onboarder agent:');
-    console.log(`  cd ${args.workDir} && claude -p "Выполни онбординг проекта" --system-prompt ${NEUROFORGE_ROOT}/roles/onboarder.md`);
+    console.log(`  cd "${args.workDir}" && claude -p "Выполни онбординг проекта" --system-prompt "${NEUROFORGE_ROOT}/roles/onboarder.md"`);
     console.log();
   } catch (err) {
     console.error(`\nError: ${err.message}`);
@@ -317,4 +324,4 @@ if (isDirectRun) {
   main();
 }
 
-export { parseArgs, deriveSlug, derivePrefix, detectRepoUrl, validate, scaffoldStructure };
+export { parseArgs, deriveSlug, derivePrefix, detectRepoUrl, isValidRepoUrl, validate, scaffoldStructure };
