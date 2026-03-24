@@ -13,6 +13,9 @@ export async function up(knex) {
     ON sessions (task_id, role_name)
     WHERE task_id IS NOT NULL AND status = 'active'
   `);
+
+  // Drop old project-scoped unique constraint — replaced by task-scoped one above
+  await knex.raw('DROP INDEX IF EXISTS idx_sessions_project_role_active');
 }
 
 export async function down(knex) {

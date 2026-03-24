@@ -140,7 +140,7 @@ async function main() {
   // 7. Use cases
   const gitOps = new GitCLIAdapter({ logger: console });
   const startNextPendingTask = new StartNextPendingTask({ taskRepo, runService, roleRegistry });
-  const createTask = new CreateTask({ taskService, runService, roleRegistry, projectRepo, taskRepo, callbackSender });
+  const createTask = new CreateTask({ taskService, runService, roleRegistry, projectRepo, taskRepo, callbackSender, gitOps, workDir: config.workDir });
   const processRun = new ProcessRun({ runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender, gitOps, workDir: config.workDir, runAbortRegistry, logger: console });
   const managerDecision = new ManagerDecision({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, sessionRepo, gitOps, workDir: config.workDir, logger: console, startNextPendingTask });
   const getTaskStatus = new GetTaskStatus({ taskService, runRepo, projectRepo });
