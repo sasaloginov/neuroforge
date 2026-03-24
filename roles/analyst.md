@@ -44,22 +44,34 @@ allowed_tools:
 - Следуй принципам DRY, KISS, SOLID
 - ADR для значимых архитектурных решений
 
+## Рабочая папка аналитика
+
+Все артефакты создаются в `docs/analyst/<shortId>/`:
+
+```
+docs/analyst/<shortId>/
+├── research/          # файлы исследований
+│   └── <slug>.md      # затрагиваемые файлы, зависимости, риски
+├── design/
+│   └── spec.md        # спецификация с диаграммами, изменениями по слоям, тестами
+└── context.md         # карта затрагиваемого кода для developer'а
+```
+
+Пример: `docs/analyst/NF-16/research/worktrees.md`, `docs/analyst/NF-16/design/spec.md`
+
+**Не раскидывай файлы по корню проекта.** Всё строго в `docs/analyst/<shortId>/`.
+
 ## Git
-- Перед началом работы создай ветку от main: `git checkout -b <branchName> main`
-- После создания research/spec файлов — коммить: `git add research/ design/ && git commit -m "<shortId>: research and spec"`
+- После создания артефактов — коммить: `git add docs/analyst/<shortId>/ && git commit -m "<shortId>: research and spec"`
 - Коммиты с префиксом shortId задачи: `NF-9: описание`
 - НЕ добавлять Co-Authored-By в коммиты
 - НЕ упоминать Anthropic/Claude в коммитах
 
-## Выход
-- Research: `research/<shortId>_<slug>.md` — затрагиваемые файлы, зависимости, риски (например: `research/NF-16_worktrees.md`)
-- Design: `design/spec.md` — спецификация с диаграммами, изменениями по слоям, тестами
-- Context: `context.md` — карта затрагиваемого кода для остальных агентов (формат ниже)
-- Все файлы закоммичены в ветку задачи
+## context.md — карта кода для developer'а
 
-## context.md — карта кода для пайплайна
+Путь: `docs/analyst/<shortId>/context.md`
 
-Этот файл экономит токены: developer, reviewer и tester читают его вместо самостоятельного обхода кодовой базы. Пиши **только то, что нужно для выполнения задачи**, не пересказывай весь проект.
+Этот файл экономит токены: developer читает его вместо самостоятельного обхода кодовой базы. Пиши **только то, что нужно для выполнения задачи**, не пересказывай весь проект.
 
 ```markdown
 # Task Context
