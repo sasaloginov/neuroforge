@@ -172,11 +172,7 @@ export class PgAgentMemoryRepo {
       `;
     }
 
-    const minScoreFilter = minScore > 0
-      ? `WHERE composite_score >= ${minScore}`
-      : '';
-
-    return `
+    const innerQuery = `
       WITH ${vectorCTE}${textCTE}
       SELECT m.*,
         (${rrfFormula}) AS rrf_score,
@@ -184,9 +180,18 @@ export class PgAgentMemoryRepo {
         ${accessBoost} AS access_boost,
         (${rrfFormula}) * (${recencyFactor}) * m.importance * ${accessBoost} AS composite_score
       ${joinClause}
-      ORDER BY composite_score DESC
-      LIMIT ${limit}
     `;
+
+    if (minScore > 0) {
+      return `SELECT * FROM (${innerQuery}) AS scored
+        WHERE composite_score >= ${minScore}
+        ORDER BY composite_score DESC
+        LIMIT ${limit}`;
+    }
+
+    return `${innerQuery}
+      ORDER BY composite_score DESC
+      LIMIT ${limit}`;
   }
 
   /**
