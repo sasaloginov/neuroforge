@@ -99,4 +99,21 @@ describe('assertSafeCallbackUrl', () => {
   it('rejects non-parseable URLs', () => {
     expect(() => assertSafeCallbackUrl('not-a-url')).toThrow();
   });
+
+  describe('ALLOW_PRIVATE_CALLBACKS', () => {
+    it('allows localhost when ALLOW_PRIVATE_CALLBACKS=true', () => {
+      process.env.ALLOW_PRIVATE_CALLBACKS = 'true';
+      try {
+        expect(() => assertSafeCallbackUrl('http://localhost:3001/callback')).not.toThrow();
+        expect(() => assertSafeCallbackUrl('http://127.0.0.1:3001/callback')).not.toThrow();
+      } finally {
+        delete process.env.ALLOW_PRIVATE_CALLBACKS;
+      }
+    });
+
+    it('still blocks private IPs when flag is not set', () => {
+      delete process.env.ALLOW_PRIVATE_CALLBACKS;
+      expect(() => assertSafeCallbackUrl('http://localhost:3001/callback')).toThrow();
+    });
+  });
 });

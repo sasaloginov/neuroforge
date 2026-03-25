@@ -45,9 +45,12 @@ function throwPrivate() {
 /**
  * Asserts that callbackUrl is safe (not targeting private networks).
  * Throws an object with statusCode 400 on violation (Fastify convention).
+ *
+ * Set ALLOW_PRIVATE_CALLBACKS=true to skip SSRF checks in dev environments.
  * @param {string} callbackUrl
  */
 export function assertSafeCallbackUrl(callbackUrl) {
+  if (process.env.ALLOW_PRIVATE_CALLBACKS === 'true') return;
   let parsed;
   try {
     parsed = new URL(callbackUrl);

@@ -30,6 +30,7 @@ fi
 
 # Start in background
 echo "Starting Neuroforge..."
+ALLOW_PRIVATE_CALLBACKS="${ALLOW_PRIVATE_CALLBACKS:-true}" \
 nohup node src/index.js > /tmp/neuroforge.log 2>&1 &
 
 NEW_PID=$!
