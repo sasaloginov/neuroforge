@@ -181,7 +181,7 @@ describe('taskRoutes — additional coverage', () => {
       method: 'POST',
       url: '/tasks',
       headers: authHeader(),
-      payload: { projectId: PROJECT_ID, title: 'T', unknownField: 'xyz' },
+      payload: { projectId: PROJECT_ID, title: 'T', callbackUrl: 'https://example.com/callback', unknownField: 'xyz' },
     });
     expect(res.statusCode).toBe(202);
     const callArgs = useCases.createTask.execute.mock.calls[0][0];
