@@ -10,6 +10,7 @@ import { ProjectNotFoundError } from '../../../domain/errors/ProjectNotFoundErro
 const PROJECT_ID = '00000000-0000-0000-0000-000000000100';
 const TASK_ID = '00000000-0000-0000-0000-000000000200';
 const RUN_ID = '00000000-0000-0000-0000-000000000300';
+const CALLBACK_URL = 'https://example.com/callback';
 
 function buildUseCases(overrides = {}) {
   return {
@@ -89,7 +90,7 @@ describe('taskRoutes', () => {
         method: 'POST',
         url: '/tasks',
         headers: authHeader(),
-        payload: { projectId: PROJECT_ID, title: 'New Task', description: 'Details' },
+        payload: { projectId: PROJECT_ID, title: 'New Task', description: 'Details', callbackUrl: CALLBACK_URL },
       });
 
       expect(res.statusCode).toBe(202);
@@ -133,7 +134,7 @@ describe('taskRoutes', () => {
         method: 'POST',
         url: '/tasks',
         headers: authHeader(),
-        payload: { projectId: PROJECT_ID, title: 'No meta task' },
+        payload: { projectId: PROJECT_ID, title: 'No meta task', callbackUrl: CALLBACK_URL },
       });
 
       expect(res.statusCode).toBe(202);
@@ -151,7 +152,7 @@ describe('taskRoutes', () => {
         method: 'POST',
         url: '/tasks',
         headers: authHeader(),
-        payload: { projectId: PROJECT_ID, title: 'Research task', mode: 'research' },
+        payload: { projectId: PROJECT_ID, title: 'Research task', mode: 'research', callbackUrl: CALLBACK_URL },
       });
 
       expect(res.statusCode).toBe(202);
@@ -169,7 +170,7 @@ describe('taskRoutes', () => {
         method: 'POST',
         url: '/tasks',
         headers: authHeader(),
-        payload: { projectId: PROJECT_ID, title: 'T', mode: 'invalid' },
+        payload: { projectId: PROJECT_ID, title: 'T', mode: 'invalid', callbackUrl: CALLBACK_URL },
       });
 
       expect(res.statusCode).toBe(400);
@@ -205,6 +206,21 @@ describe('taskRoutes', () => {
       expect(res.statusCode).toBe(400);
     });
 
+    it('returns 400 when callbackUrl is missing', async () => {
+      const { app: a } = setup();
+      app = a;
+      await app.ready();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/tasks',
+        headers: authHeader(),
+        payload: { projectId: PROJECT_ID, title: 'Task without callback' },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
     it('returns 404 when project not found', async () => {
       const { app: a } = setup({
         createTask: {
@@ -218,7 +234,7 @@ describe('taskRoutes', () => {
         method: 'POST',
         url: '/tasks',
         headers: authHeader(),
-        payload: { projectId: PROJECT_ID, title: 'T' },
+        payload: { projectId: PROJECT_ID, title: 'T', callbackUrl: CALLBACK_URL },
       });
 
       expect(res.statusCode).toBe(404);
@@ -254,7 +270,7 @@ describe('taskRoutes', () => {
         method: 'POST',
         url: '/tasks',
         headers: authHeader(),
-        payload: { projectId: PROJECT_ID, title: 'T' },
+        payload: { projectId: PROJECT_ID, title: 'T', callbackUrl: CALLBACK_URL },
       });
 
       expect(res.statusCode).toBe(403);

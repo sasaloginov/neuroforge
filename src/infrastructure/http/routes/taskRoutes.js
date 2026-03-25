@@ -6,7 +6,7 @@ const validModes = Object.values(TaskMode);
 const createTaskSchema = {
   body: {
     type: 'object',
-    required: ['projectId', 'title'],
+    required: ['projectId', 'title', 'callbackUrl'],
     properties: {
       projectId: { type: 'string', format: 'uuid' },
       title: { type: 'string', minLength: 1, maxLength: 255 },
