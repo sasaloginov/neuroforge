@@ -62,6 +62,40 @@ describe('assertSafeCallbackUrl', () => {
     });
   });
 
+  describe('blocks IPv4-mapped IPv6', () => {
+    it('blocks ::ffff:127.0.0.1 (dotted form)', () => {
+      expect(() => assertSafeCallbackUrl('https://[::ffff:127.0.0.1]/callback')).toThrow();
+    });
+
+    it('blocks ::ffff:10.0.0.1 (dotted form)', () => {
+      expect(() => assertSafeCallbackUrl('https://[::ffff:10.0.0.1]/callback')).toThrow();
+    });
+
+    it('blocks ::ffff:169.254.169.254 (dotted form)', () => {
+      expect(() => assertSafeCallbackUrl('https://[::ffff:169.254.169.254]/callback')).toThrow();
+    });
+
+    it('blocks ::ffff:a9fe:a9fe (hex form — 169.254.169.254)', () => {
+      expect(() => assertSafeCallbackUrl('https://[::ffff:a9fe:a9fe]/callback')).toThrow();
+    });
+
+    it('blocks ::ffff:0a00:0001 (hex form — 10.0.0.1)', () => {
+      expect(() => assertSafeCallbackUrl('https://[::ffff:0a00:0001]/callback')).toThrow();
+    });
+
+    it('blocks ::ffff:c0a8:0101 (hex form — 192.168.1.1)', () => {
+      expect(() => assertSafeCallbackUrl('https://[::ffff:c0a8:0101]/callback')).toThrow();
+    });
+
+    it('allows ::ffff: with public IP (hex form)', () => {
+      expect(() => assertSafeCallbackUrl('https://[::ffff:0808:0808]/callback')).not.toThrow();
+    });
+
+    it('allows ::ffff: with public IP (dotted form)', () => {
+      expect(() => assertSafeCallbackUrl('https://[::ffff:8.8.8.8]/callback')).not.toThrow();
+    });
+  });
+
   it('rejects non-parseable URLs', () => {
     expect(() => assertSafeCallbackUrl('not-a-url')).toThrow();
   });

@@ -36,6 +36,12 @@ function isPrivateIPv4(ip) {
   return false;
 }
 
+function throwPrivate() {
+  throw Object.assign(new Error('callbackUrl must not point to a private/internal address'), {
+    statusCode: 400,
+  });
+}
+
 /**
  * Asserts that callbackUrl is safe (not targeting private networks).
  * Throws an object with statusCode 400 on violation (Fastify convention).
@@ -52,17 +58,17 @@ export function assertSafeCallbackUrl(callbackUrl) {
   const hostname = parsed.hostname;
 
   if (BLOCKED_HOSTNAMES.has(hostname.toLowerCase())) {
-    throw Object.assign(new Error('callbackUrl must not point to a private/internal address'), {
-      statusCode: 400,
-    });
+    throwPrivate();
   }
 
   // Strip IPv6 brackets for numeric check
   const bare = hostname.startsWith('[') ? hostname.slice(1, -1) : hostname;
 
-  // IPv6 private ranges (fc00::/7, fe80::/10, ::1, ::)
+  // IPv6 checks
   if (bare.includes(':')) {
     const lower = bare.toLowerCase();
+
+    // Pure private IPv6 ranges (fc00::/7, fe80::/10, ::1, ::)
     if (
       lower === '::1' ||
       lower === '::' ||
@@ -73,15 +79,32 @@ export function assertSafeCallbackUrl(callbackUrl) {
       lower.startsWith('fea') ||
       lower.startsWith('feb')
     ) {
-      throw Object.assign(new Error('callbackUrl must not point to a private/internal address'), {
-        statusCode: 400,
-      });
+      throwPrivate();
+    }
+
+    // IPv4-mapped IPv6 — ::ffff:X where X is dotted or hex
+    const mapped = lower.match(/^::ffff:(.+)$/);
+    if (mapped) {
+      const inner = mapped[1];
+      // Dotted form: ::ffff:10.0.0.1
+      if (inner.includes('.')) {
+        if (isPrivateIPv4(inner)) throwPrivate();
+      } else {
+        // Hex form: ::ffff:a9fe:a9fe → convert two 16-bit groups to IPv4
+        const hexParts = inner.split(':');
+        if (hexParts.length === 2) {
+          const hi = parseInt(hexParts[0], 16);
+          const lo = parseInt(hexParts[1], 16);
+          if (!Number.isNaN(hi) && !Number.isNaN(lo)) {
+            const ipv4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+            if (isPrivateIPv4(ipv4)) throwPrivate();
+          }
+        }
+      }
     }
   }
 
   if (isPrivateIPv4(bare)) {
-    throw Object.assign(new Error('callbackUrl must not point to a private/internal address'), {
-      statusCode: 400,
-    });
+    throwPrivate();
   }
 }
