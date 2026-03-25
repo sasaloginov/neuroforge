@@ -31,8 +31,9 @@ export class CreateTask {
     const project = await this.#projectRepo.findById(projectId);
     if (!project) throw new ProjectNotFoundError(projectId);
 
-    // Validate analyst role exists (needed for non-backlog tasks)
-    this.#roleRegistry.get('analyst');
+    // Validate required role exists
+    const isFix = mode === 'fix';
+    this.#roleRegistry.get(isFix ? 'developer' : 'analyst');
 
     const task = await this.#taskService.createTask({
       projectId,
@@ -91,8 +92,37 @@ export class CreateTask {
       }
     }
 
-    // Activated — enqueue analyst phase
-    const prompt = `Фаза: analyst.
+    // Enqueue first phase based on mode
+    if (isFix) {
+      // Fix mode: skip analyst, go straight to developer
+      const prompt = `Фаза: developer (fix).
+
+Задача: ${task.shortId ?? ''} ${title}
+Ветка: ${task.branchName ?? 'не назначена'}
+
+${description ?? ''}
+
+Это небольшая правка (fix). Аналитик не запускался — работай по описанию задачи.`;
+
+      await this.#runService.enqueue({
+        taskId: task.id,
+        stepId: null,
+        roleName: 'developer',
+        prompt,
+        callbackUrl,
+        callbackMeta,
+      });
+
+      if (callbackUrl) {
+        await this.#callbackSender.send(
+          callbackUrl,
+          { type: 'progress', taskId: task.id, shortId, branchName: task.branchName, stage: 'queued', message: 'Fix-задача принята, начинаю разработку' },
+          callbackMeta,
+        );
+      }
+    } else {
+      // Full/auto mode: start with analyst
+      const prompt = `Фаза: analyst.
 
 Задача: ${task.shortId ?? ''} ${title}
 Ветка: ${task.branchName ?? 'не назначена'}
@@ -101,21 +131,22 @@ ${description ?? ''}
 
 Проанализируй задачу и создай спецификацию.`;
 
-    await this.#runService.enqueue({
-      taskId: task.id,
-      stepId: null,
-      roleName: 'analyst',
-      prompt,
-      callbackUrl,
-      callbackMeta,
-    });
-
-    if (callbackUrl) {
-      await this.#callbackSender.send(
+      await this.#runService.enqueue({
+        taskId: task.id,
+        stepId: null,
+        roleName: 'analyst',
+        prompt,
         callbackUrl,
-        { type: 'progress', taskId: task.id, shortId, branchName: task.branchName, stage: 'queued', message: 'Задача принята, начинаю анализ' },
         callbackMeta,
-      );
+      });
+
+      if (callbackUrl) {
+        await this.#callbackSender.send(
+          callbackUrl,
+          { type: 'progress', taskId: task.id, shortId, branchName: task.branchName, stage: 'queued', message: 'Задача принята, начинаю анализ' },
+          callbackMeta,
+        );
+      }
     }
 
     return { taskId: task.id, shortId, branchName: task.branchName, status: 'in_progress' };

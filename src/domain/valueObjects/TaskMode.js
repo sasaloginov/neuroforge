@@ -1,6 +1,7 @@
 const MODES = {
   FULL: 'full',
   RESEARCH: 'research',
+  FIX: 'fix',
   AUTO: 'auto',
 };
 
