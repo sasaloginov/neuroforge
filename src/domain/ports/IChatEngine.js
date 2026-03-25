@@ -5,6 +5,7 @@
  * @property {number} [timeoutMs] - override default timeout
  * @property {string} [runId] - current run ID (used by MCP config for agent tools)
  * @property {string} [taskId] - current task ID (used by MCP config for agent tools)
+ * @property {string} [workDir] - per-project working directory (overrides global)
  */
 
 /**

@@ -36,9 +36,6 @@ import { createWorker } from './infrastructure/scheduler/worker.js';
 import { ManagerScheduler } from './infrastructure/scheduler/managerScheduler.js';
 import { DatabaseHealthChecker, SchedulerHealthChecker } from './infrastructure/http/healthCheckers.js';
 import { getPool } from './infrastructure/persistence/pg.js';
-import { PgKnowledgeGraphRepo } from './infrastructure/persistence/PgKnowledgeGraphRepo.js';
-import { HaikuKGEntityExtractor } from './infrastructure/claude/haikuKGEntityExtractor.js';
-import { KnowledgeGraphService } from './domain/services/KnowledgeGraphService.js';
 
 async function main() {
   // 1. Config
@@ -141,20 +138,11 @@ async function main() {
   const runService = new RunService({ runRepo });
   const runAbortRegistry = new RunAbortRegistry();
 
-  // 6a. Knowledge Graph service
-  const kgRepo = new PgKnowledgeGraphRepo();
-  const kgExtractor = new HaikuKGEntityExtractor({ logger: console });
-  const knowledgeGraphService = new KnowledgeGraphService({
-    knowledgeGraphRepo: kgRepo,
-    kgEntityExtractor: kgExtractor,
-    logger: console,
-  });
-
   // 7. Use cases
   const gitOps = new GitCLIAdapter({ logger: console });
   const startNextPendingTask = new StartNextPendingTask({ taskRepo, runService, roleRegistry });
   const createTask = new CreateTask({ taskService, runService, roleRegistry, projectRepo, taskRepo, callbackSender, gitOps, workDir: config.workDir });
-  const processRun = new ProcessRun({ runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender, gitOps, workDir: config.workDir, runAbortRegistry, logger: console });
+  const processRun = new ProcessRun({ runRepo, runService, taskRepo, projectRepo, chatEngine, sessionRepo, roleRegistry, callbackSender, gitOps, workDir: config.workDir, runAbortRegistry, logger: console });
   const managerDecision = new ManagerDecision({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, sessionRepo, projectRepo, gitOps, workDir: config.workDir, logger: console, startNextPendingTask });
   const getTaskStatus = new GetTaskStatus({ taskService, runRepo, projectRepo });
   const getRunDetail = new GetRunDetail({ taskService, runRepo });

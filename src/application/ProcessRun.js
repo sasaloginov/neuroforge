@@ -1,30 +1,31 @@
 import { RunTimeoutError } from '../domain/errors/RunTimeoutError.js';
+import { resolveWorkDir, assertBranchMatchesProject } from './resolveWorkDir.js';
 
 export class ProcessRun {
   #runRepo;
   #runService;
   #taskRepo;
+  #projectRepo;
   #chatEngine;
   #sessionRepo;
   #roleRegistry;
   #callbackSender;
   #gitOps;
   #workDir;
-  #agentMemoryService;
   #runAbortRegistry;
   #logger;
 
-  constructor({ runRepo, runService, taskRepo, chatEngine, sessionRepo, roleRegistry, callbackSender, gitOps, workDir, agentMemoryService, runAbortRegistry, logger }) {
+  constructor({ runRepo, runService, taskRepo, projectRepo, chatEngine, sessionRepo, roleRegistry, callbackSender, gitOps, workDir, runAbortRegistry, logger }) {
     this.#runRepo = runRepo;
     this.#runService = runService;
     this.#taskRepo = taskRepo;
+    this.#projectRepo = projectRepo || null;
     this.#chatEngine = chatEngine;
     this.#sessionRepo = sessionRepo;
     this.#roleRegistry = roleRegistry;
     this.#callbackSender = callbackSender;
     this.#gitOps = gitOps || null;
     this.#workDir = workDir || null;
-    this.#agentMemoryService = agentMemoryService || null;
     this.#runAbortRegistry = runAbortRegistry || null;
     this.#logger = logger || console;
   }
@@ -77,46 +78,39 @@ export class ProcessRun {
       run.sessionId = session.id;
       await this.#runRepo.save(run);
 
+      // Resolve project and working directory
+      const project = task?.projectId && this.#projectRepo
+        ? await this.#projectRepo.findById(task.projectId)
+        : null;
+      const effectiveWorkDir = await resolveWorkDir({ project, fallback: this.#workDir });
+
+      // Guard: branch prefix must match project prefix
+      if (task?.branchName && project?.prefix) {
+        assertBranchMatchesProject(task.branchName, project.prefix);
+      }
+
       // Ensure task branch is checked out (if configured)
-      if (this.#gitOps && this.#workDir && task?.branchName) {
+      if (this.#gitOps && effectiveWorkDir && task?.branchName) {
         try {
-          await this.#gitOps.ensureBranch(task.branchName, this.#workDir);
+          await this.#gitOps.ensureBranch(task.branchName, effectiveWorkDir);
         } catch (err) {
           this.#logger.warn('[ProcessRun] Git branch checkout failed for %s: %s', task.branchName, err.message);
         }
         try {
-          await this.#gitOps.syncAllWorktrees(task.branchName, this.#workDir);
+          await this.#gitOps.syncAllWorktrees(task.branchName, effectiveWorkDir);
         } catch (err) {
           this.#logger.warn('[ProcessRun] Worktree sync failed for %s: %s', task.branchName, err.message);
         }
       }
 
-      // Retrieve relevant memories and enrich prompt
-      let enrichedPrompt = run.prompt;
-      if (this.#agentMemoryService && task) {
-        try {
-          const memories = await this.#agentMemoryService.retrieve(
-            task.projectId,
-            run.prompt,
-            { role: run.roleName, limit: 5 },
-          );
-          if (memories.length > 0) {
-            const memoryContext = this.#agentMemoryService.formatForPrompt(memories);
-            enrichedPrompt = `${run.prompt}\n\n<project_memory>\n${memoryContext}\n</project_memory>`;
-            this.#logger.log('[ProcessRun] Injected %d memories for %s', memories.length, run.roleName);
-          }
-        } catch (err) {
-          this.#logger.warn('[ProcessRun] Memory retrieval failed: %s', err.message);
-        }
-      }
-
       // Pass CLI session id for continuation
-      result = await this.#chatEngine.runPrompt(run.roleName, enrichedPrompt, {
+      result = await this.#chatEngine.runPrompt(run.roleName, run.prompt, {
         sessionId: session.cliSessionId || null,
         timeoutMs: role.timeoutMs,
         runId: run.id,
         taskId: run.taskId,
         signal: abortController.signal,
+        workDir: effectiveWorkDir,
       });
 
       // Update session's cliSessionId if returned

@@ -1,6 +1,7 @@
 import { RunNotFoundError } from '../domain/errors/RunNotFoundError.js';
 import { InvalidStateError } from '../domain/errors/InvalidStateError.js';
 import { ReviewFindings } from '../domain/valueObjects/ReviewFindings.js';
+import { resolveWorkDir } from './resolveWorkDir.js';
 
 /**
  * Pipeline v2: Deterministic-first PM orchestrator.
@@ -389,12 +390,11 @@ FAIL = есть CRITICAL/MAJOR/HIGH. PASS = только MINOR/LOW или нет
   async #mergeAndComplete(task) {
     // Attempt git merge if gitOps available
     if (this.#gitOps && task.branchName) {
-      // Resolve project workDir (from DB), fallback to global workDir
-      let mergeDir = this.#workDir;
-      if (this.#projectRepo && task.projectId) {
-        const project = await this.#projectRepo.findById(task.projectId);
-        if (project?.workDir) mergeDir = project.workDir;
-      }
+      const mergeDir = await resolveWorkDir({
+        projectRepo: this.#projectRepo,
+        projectId: task.projectId,
+        fallback: this.#workDir,
+      });
       try {
         await this.#gitOps.mergeBranch(task.branchName, mergeDir);
         this.#logger.info('[ManagerDecision] Merged branch %s to main', task.branchName);

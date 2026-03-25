@@ -46,7 +46,9 @@ export class ClaudeCLIAdapter extends IChatEngine {
   }
 
   async #execCLI(roleName, prompt, options = {}) {
-    const { sessionId, signal, timeoutMs, runId, taskId } = options;
+    const { sessionId, signal, timeoutMs, runId, taskId, workDir } = options;
+
+    const effectiveWorkDir = workDir || this.workDir;
 
     if (signal && signal.aborted) {
       throw new Error('Aborted');
@@ -68,7 +70,7 @@ export class ClaudeCLIAdapter extends IChatEngine {
       args.push('--allowed-tools', role.allowedTools.join(','));
     }
 
-    args.push('--append-system-prompt', `Project workspace: ${this.workDir}`);
+    args.push('--append-system-prompt', `Project workspace: ${effectiveWorkDir}`);
 
     if (sessionId) {
       args.push('--resume', sessionId);
@@ -99,7 +101,7 @@ export class ClaudeCLIAdapter extends IChatEngine {
       };
 
       const proc = spawn('claude', args, {
-        cwd: this.workDir,
+        cwd: effectiveWorkDir,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {
           HOME: process.env.HOME,

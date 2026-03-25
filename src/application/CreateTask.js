@@ -1,6 +1,7 @@
 import { ProjectNotFoundError } from '../domain/errors/ProjectNotFoundError.js';
 import { ValidationError } from '../domain/errors/ValidationError.js';
 import { generateBranchName } from '../domain/valueObjects/BranchName.js';
+import { resolveWorkDir } from './resolveWorkDir.js';
 
 export class CreateTask {
   #taskService;
@@ -83,9 +84,11 @@ export class CreateTask {
     }
 
     // Create git branch before starting work
-    if (this.#gitOps && this.#workDir && task.branchName) {
-      const projectWorkDir = project.workDir || this.#workDir;
-      await this.#gitOps.ensureBranch(task.branchName, projectWorkDir);
+    if (this.#gitOps && task.branchName) {
+      const effectiveWorkDir = await resolveWorkDir({ project, fallback: this.#workDir });
+      if (effectiveWorkDir) {
+        await this.#gitOps.ensureBranch(task.branchName, effectiveWorkDir);
+      }
     }
 
     // Activated — enqueue analyst phase
