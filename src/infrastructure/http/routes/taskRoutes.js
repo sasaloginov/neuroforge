@@ -11,7 +11,7 @@ const createTaskSchema = {
       projectId: { type: 'string', format: 'uuid' },
       title: { type: 'string', minLength: 1, maxLength: 255 },
       description: { type: 'string', maxLength: 10000 },
-      callbackUrl: { type: 'string', format: 'uri', maxLength: 512 },
+      callbackUrl: { type: 'string', format: 'uri', pattern: '^https?://', maxLength: 512 },
       callbackMeta: { type: 'object' },
       status: { type: 'string', enum: ['backlog'] },
       mode: { type: 'string', enum: validModes, default: 'auto' },

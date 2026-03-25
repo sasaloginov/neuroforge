@@ -221,6 +221,23 @@ describe('taskRoutes', () => {
       expect(res.statusCode).toBe(400);
     });
 
+    it('returns 400 when callbackUrl uses non-http scheme', async () => {
+      const { app: a } = setup();
+      app = a;
+      await app.ready();
+
+      for (const url of ['file:///etc/passwd', 'ftp://internal/data', 'gopher://evil']) {
+        const res = await app.inject({
+          method: 'POST',
+          url: '/tasks',
+          headers: authHeader(),
+          payload: { projectId: PROJECT_ID, title: 'T', callbackUrl: url },
+        });
+
+        expect(res.statusCode).toBe(400);
+      }
+    });
+
     it('returns 404 when project not found', async () => {
       const { app: a } = setup({
         createTask: {
