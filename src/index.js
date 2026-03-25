@@ -36,6 +36,9 @@ import { createWorker } from './infrastructure/scheduler/worker.js';
 import { ManagerScheduler } from './infrastructure/scheduler/managerScheduler.js';
 import { DatabaseHealthChecker, SchedulerHealthChecker } from './infrastructure/http/healthCheckers.js';
 import { getPool } from './infrastructure/persistence/pg.js';
+import { PgKnowledgeGraphRepo } from './infrastructure/persistence/PgKnowledgeGraphRepo.js';
+import { HaikuKGEntityExtractor } from './infrastructure/claude/haikuKGEntityExtractor.js';
+import { KnowledgeGraphService } from './domain/services/KnowledgeGraphService.js';
 
 async function main() {
   // 1. Config
@@ -137,6 +140,15 @@ async function main() {
   const taskService = new TaskService({ taskRepo });
   const runService = new RunService({ runRepo });
   const runAbortRegistry = new RunAbortRegistry();
+
+  // 6a. Knowledge Graph service
+  const kgRepo = new PgKnowledgeGraphRepo();
+  const kgExtractor = new HaikuKGEntityExtractor({ logger: console });
+  const knowledgeGraphService = new KnowledgeGraphService({
+    knowledgeGraphRepo: kgRepo,
+    kgEntityExtractor: kgExtractor,
+    logger: console,
+  });
 
   // 7. Use cases
   const gitOps = new GitCLIAdapter({ logger: console });
