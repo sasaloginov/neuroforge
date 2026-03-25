@@ -1,4 +1,5 @@
 import { assertProjectScope } from '../scopeHelpers.js';
+import { assertSafeCallbackUrl } from '../urlValidator.js';
 import { TaskMode } from '../../../domain/valueObjects/TaskMode.js';
 
 const validModes = Object.values(TaskMode);
@@ -202,6 +203,7 @@ const cancelSchema = {
 export function taskRoutes({ useCases }) {
   return async function (fastify) {
     fastify.post('/tasks', { schema: createTaskSchema }, async (request, reply) => {
+      assertSafeCallbackUrl(request.body.callbackUrl);
       assertProjectScope(request.apiKey, request.body.projectId);
       const result = await useCases.createTask.execute(request.body);
       return reply.code(202).send(result);

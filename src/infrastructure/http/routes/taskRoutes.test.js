@@ -238,6 +238,32 @@ describe('taskRoutes', () => {
       }
     });
 
+    it('returns 400 when callbackUrl points to private/internal IP', async () => {
+      const { app: a } = setup();
+      app = a;
+      await app.ready();
+
+      const privateUrls = [
+        'https://127.0.0.1/callback',
+        'https://10.0.0.1/callback',
+        'https://172.16.0.1/callback',
+        'https://192.168.1.1/callback',
+        'https://169.254.169.254/latest/meta-data/',
+        'https://localhost/callback',
+      ];
+
+      for (const callbackUrl of privateUrls) {
+        const res = await app.inject({
+          method: 'POST',
+          url: '/tasks',
+          headers: authHeader(),
+          payload: { projectId: PROJECT_ID, title: 'T', callbackUrl },
+        });
+
+        expect(res.statusCode, `Expected 400 for ${callbackUrl}`).toBe(400);
+      }
+    });
+
     it('returns 404 when project not found', async () => {
       const { app: a } = setup({
         createTask: {
