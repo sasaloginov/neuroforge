@@ -11,10 +11,14 @@ export class EnqueueTask {
 
   /**
    * Move a task from backlog to pending, then attempt to start it.
-   * @param {{ taskId: string }} params
+   * @param {{ taskId: string, mode?: string }} params
    */
-  async execute({ taskId }) {
+  async execute({ taskId, mode }) {
     const task = await this.#taskService.enqueueFromBacklog(taskId);
+
+    if (mode) {
+      await this.#taskService.updateMode(task.id, mode);
+    }
 
     const project = await this.#projectRepo.findById(task.projectId);
     const shortId = project?.prefix && task.seqNumber != null
