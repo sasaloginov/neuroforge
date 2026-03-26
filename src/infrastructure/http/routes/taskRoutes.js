@@ -40,6 +40,18 @@ const enqueueSchema = {
       id: { type: 'string' },
     },
   },
+  body: {
+    oneOf: [
+      {
+        type: 'object',
+        properties: {
+          mode: { type: 'string', enum: validModes },
+        },
+        additionalProperties: false,
+      },
+      { type: 'null' },
+    ],
+  },
   response: {
     200: {
       type: 'object',
@@ -123,7 +135,35 @@ const restartSchema = {
   },
 };
 
-const resumeSchema = {
+const resumeTaskSchema = {
+  params: {
+    type: 'object',
+    required: ['id'],
+    properties: {
+      id: { type: 'string' },
+    },
+  },
+  body: {
+    type: 'object',
+    properties: {
+      instruction: { type: 'string', minLength: 1, maxLength: 10000 },
+    },
+    additionalProperties: false,
+  },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string' },
+        shortId: { type: 'string' },
+        status: { type: 'string' },
+        decision: { type: 'object' },
+      },
+    },
+  },
+};
+
+const resumeResearchSchema = {
   params: {
     type: 'object',
     required: ['id'],
@@ -247,7 +287,18 @@ export function taskRoutes({ useCases }) {
       return reply.send(result);
     });
 
-    fastify.post('/tasks/:id/resume', { schema: resumeSchema }, async (request, reply) => {
+    fastify.post('/tasks/:id/resume', { schema: resumeTaskSchema }, async (request, reply) => {
+      const status = await useCases.getTaskStatus.execute({ taskId: request.params.id });
+      assertProjectScope(request.apiKey, status.task.projectId);
+
+      const result = await useCases.resumeTask.execute({
+        taskId: status.task.id,
+        instruction: request.body?.instruction,
+      });
+      return reply.send(result);
+    });
+
+    fastify.post('/tasks/:id/resume-research', { schema: resumeResearchSchema }, async (request, reply) => {
       const status = await useCases.getTaskStatus.execute({ taskId: request.params.id });
       assertProjectScope(request.apiKey, status.task.projectId);
 
@@ -281,7 +332,10 @@ export function taskRoutes({ useCases }) {
       const status = await useCases.getTaskStatus.execute({ taskId: request.params.id });
       assertProjectScope(request.apiKey, status.task.projectId);
 
-      const result = await useCases.enqueueTask.execute({ taskId: status.task.id });
+      const result = await useCases.enqueueTask.execute({
+        taskId: status.task.id,
+        mode: request.body?.mode,
+      });
       return reply.send(result);
     });
   };

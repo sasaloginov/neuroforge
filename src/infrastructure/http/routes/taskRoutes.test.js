@@ -55,6 +55,12 @@ function buildUseCases(overrides = {}) {
     resumeResearch: {
       execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
     },
+    resumeTask: {
+      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress', decision: { action: 'spawn_run', role: 'developer' } }),
+    },
+    enqueueTask: {
+      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
+    },
     cancelTask: {
       execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'cancelled', cancelledRuns: 1 }),
     },
@@ -462,9 +468,9 @@ describe('taskRoutes', () => {
     });
   });
 
-  // POST /tasks/:id/resume
+  // POST /tasks/:id/resume (universal ResumeTask)
   describe('POST /tasks/:id/resume', () => {
-    it('resumes task and returns 200 with instruction', async () => {
+    it('resumes task and returns 200 with optional instruction', async () => {
       const { app: a, useCases } = setup();
       app = a;
       await app.ready();
@@ -472,6 +478,68 @@ describe('taskRoutes', () => {
       const res = await app.inject({
         method: 'POST',
         url: `/tasks/${TASK_ID}/resume`,
+        headers: authHeader(),
+        payload: { instruction: 'Retry with fixes' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().taskId).toBe(TASK_ID);
+      expect(useCases.resumeTask.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskId: TASK_ID,
+          instruction: 'Retry with fixes',
+        }),
+      );
+    });
+
+    it('works without body (instruction is optional)', async () => {
+      const { app: a, useCases } = setup();
+      app = a;
+      await app.ready();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/tasks/${TASK_ID}/resume`,
+        headers: authHeader(),
+        payload: {},
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(useCases.resumeTask.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ taskId: TASK_ID }),
+      );
+    });
+
+    it('returns 409 when task status is not allowed', async () => {
+      const { app: a } = setup({
+        resumeTask: {
+          execute: vi.fn().mockRejectedValue(new InvalidStateError('Cannot resume task in status in_progress')),
+        },
+      });
+      app = a;
+      await app.ready();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/tasks/${TASK_ID}/resume`,
+        headers: authHeader(),
+        payload: {},
+      });
+
+      expect(res.statusCode).toBe(409);
+    });
+  });
+
+  // POST /tasks/:id/resume-research (renamed from /resume)
+  describe('POST /tasks/:id/resume-research', () => {
+    it('resumes research and returns 200 with instruction', async () => {
+      const { app: a, useCases } = setup();
+      app = a;
+      await app.ready();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/tasks/${TASK_ID}/resume-research`,
         headers: authHeader(),
         payload: { instruction: 'Передай в разработку' },
       });
@@ -493,7 +561,7 @@ describe('taskRoutes', () => {
 
       const res = await app.inject({
         method: 'POST',
-        url: `/tasks/${TASK_ID}/resume`,
+        url: `/tasks/${TASK_ID}/resume-research`,
         headers: authHeader(),
         payload: {},
       });
@@ -512,7 +580,7 @@ describe('taskRoutes', () => {
 
       const res = await app.inject({
         method: 'POST',
-        url: `/tasks/${TASK_ID}/resume`,
+        url: `/tasks/${TASK_ID}/resume-research`,
         headers: authHeader(),
         payload: { instruction: 'Go' },
       });

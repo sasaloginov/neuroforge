@@ -32,6 +32,15 @@ function buildUseCases(overrides = {}) {
     replyToQuestion: {
       execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
     },
+    resumeResearch: {
+      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
+    },
+    resumeTask: {
+      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress', decision: {} }),
+    },
+    enqueueTask: {
+      execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
+    },
     cancelTask: {
       execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'cancelled', cancelledRuns: 1 }),
     },
@@ -224,6 +233,15 @@ describe('taskRoutes — restart endpoint', () => {
       replyToQuestion: {
         execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
       },
+      resumeResearch: {
+        execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
+      },
+      resumeTask: {
+        execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress', decision: {} }),
+      },
+      enqueueTask: {
+        execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
+      },
       cancelTask: {
         execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'cancelled', cancelledRuns: 0 }),
       },
@@ -273,5 +291,81 @@ describe('taskRoutes — restart endpoint', () => {
 
     expect(res.statusCode).toBe(200);
     expect(useCases.getTaskStatus.execute).toHaveBeenCalledWith({ taskId: 'NF-1' });
+  });
+});
+
+// ─── POST /tasks/:id/enqueue — mode support ────────────────────────────
+
+describe('taskRoutes — enqueue with mode', () => {
+  let app;
+
+  afterEach(async () => {
+    if (app) await app.close();
+  });
+
+  function setupEnqueue(overrides = {}) {
+    const useCases = buildUseCases({
+      enqueueTask: {
+        execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress' }),
+      },
+      resumeTask: {
+        execute: vi.fn().mockResolvedValue({ taskId: TASK_ID, shortId: 'NF-1', status: 'in_progress', decision: {} }),
+      },
+      ...overrides,
+    });
+    const server = createTestServer({
+      registerRoutes: (f) => f.register(taskRoutes({ useCases }), { prefix: '/' }),
+    });
+    return { ...server, useCases };
+  }
+
+  it('POST /tasks/:id/enqueue passes mode to use case', async () => {
+    const { app: a, useCases } = setupEnqueue();
+    app = a;
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/tasks/${TASK_ID}/enqueue`,
+      headers: authHeader(),
+      payload: { mode: 'research' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(useCases.enqueueTask.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId: TASK_ID, mode: 'research' }),
+    );
+  });
+
+  it('POST /tasks/:id/enqueue works without mode (backward compatible)', async () => {
+    const { app: a, useCases } = setupEnqueue();
+    app = a;
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/tasks/${TASK_ID}/enqueue`,
+      headers: authHeader(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(useCases.enqueueTask.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId: TASK_ID }),
+    );
+  });
+
+  it('POST /tasks/:id/enqueue rejects invalid mode', async () => {
+    const { app: a } = setupEnqueue();
+    app = a;
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/tasks/${TASK_ID}/enqueue`,
+      headers: authHeader(),
+      payload: { mode: 'invalid_mode' },
+    });
+
+    expect(res.statusCode).toBe(400);
   });
 });

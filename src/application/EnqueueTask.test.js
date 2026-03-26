@@ -15,6 +15,7 @@ describe('EnqueueTask', () => {
         seqNumber: 5,
         status: 'pending',
       }),
+      updateMode: vi.fn().mockResolvedValue({}),
     };
     startNextPendingTask = {
       execute: vi.fn().mockResolvedValue({ started: true, taskId: 'task-1' }),
@@ -48,5 +49,18 @@ describe('EnqueueTask', () => {
     const result = await enqueueTask.execute({ taskId: 'task-1' });
 
     expect(result.shortId).toBeUndefined();
+  });
+
+  it('updates mode when mode is provided', async () => {
+    const result = await enqueueTask.execute({ taskId: 'task-1', mode: 'research' });
+
+    expect(taskService.updateMode).toHaveBeenCalledWith('task-1', 'research');
+    expect(result.status).toBe('in_progress');
+  });
+
+  it('does not update mode when mode is not provided', async () => {
+    await enqueueTask.execute({ taskId: 'task-1' });
+
+    expect(taskService.updateMode).not.toHaveBeenCalled();
   });
 });

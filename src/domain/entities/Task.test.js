@@ -109,10 +109,11 @@ describe('Task', () => {
       expect(() => task.transitionTo('done')).toThrow(InvalidTransitionError);
     });
 
-    it('rejects transition from terminal state', () => {
+    it('cancelled → in_progress (resume)', () => {
       const task = Task.create(defaults);
       task.transitionTo('cancelled');
-      expect(() => task.transitionTo('in_progress')).toThrow(InvalidTransitionError);
+      task.transitionTo('in_progress');
+      expect(task.status).toBe('in_progress');
     });
   });
 
