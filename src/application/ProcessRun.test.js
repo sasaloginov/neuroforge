@@ -49,7 +49,7 @@ describe('ProcessRun', () => {
       save: vi.fn().mockResolvedValue(undefined),
     };
     roleRegistry = {
-      get: vi.fn().mockReturnValue({ name: 'analyst', timeoutMs: 300000 }),
+      resolve: vi.fn().mockResolvedValue({ name: 'analyst', timeoutMs: 300000 }),
     };
     callbackSender = {
       send: vi.fn().mockResolvedValue({ ok: true }),
@@ -66,7 +66,7 @@ describe('ProcessRun', () => {
     expect(result.result).toEqual({ response: 'Analysis result', sessionId: 'cli-session-1' });
 
     expect(runRepo.takeNext).toHaveBeenCalled();
-    expect(roleRegistry.get).toHaveBeenCalledWith('analyst');
+    expect(roleRegistry.resolve).toHaveBeenCalledWith('analyst', null);
     expect(chatEngine.runPrompt).toHaveBeenCalledWith('analyst', 'Analyze this task', expect.objectContaining({
       sessionId: 'cli-session-old',
       timeoutMs: 300000,

@@ -10,7 +10,7 @@ import { IChatEngine } from '../../domain/ports/IChatEngine.js';
 export class ClaudeCLIAdapter extends IChatEngine {
   /**
    * @param {object} deps
-   * @param {import('../../domain/services/RoleRegistry.js').RoleRegistry} deps.roleRegistry
+   * @param {import('../../domain/ports/IRoleResolver.js').IRoleResolver} deps.roleRegistry — role resolver (IRoleResolver or RoleRegistry)
    * @param {string} [deps.workDir] - working directory for claude CLI
    * @param {object} [deps.logger] - logger with info/warn/error methods
    * @param {number} [deps.killDelayMs=5000] - delay between SIGTERM and SIGKILL
@@ -18,7 +18,7 @@ export class ClaudeCLIAdapter extends IChatEngine {
    */
   constructor({ roleRegistry, workDir, logger, killDelayMs, mcpConfigPath } = {}) {
     super();
-    this.roleRegistry = roleRegistry;
+    this.roleResolver = roleRegistry;
     this.workDir = workDir || process.cwd();
     this.logger = logger || console;
     this.killDelayMs = killDelayMs ?? 5000;
@@ -54,7 +54,7 @@ export class ClaudeCLIAdapter extends IChatEngine {
       throw new Error('Aborted');
     }
 
-    const role = this.roleRegistry.get(roleName);
+    const role = await this.roleResolver.resolve(roleName, effectiveWorkDir);
 
     const args = ['--print', '--output-format', 'json', '--model', role.model];
 

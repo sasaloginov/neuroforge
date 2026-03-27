@@ -8,7 +8,7 @@ export class ProcessRun {
   #projectRepo;
   #chatEngine;
   #sessionRepo;
-  #roleRegistry;
+  #roleResolver;
   #callbackSender;
   #gitOps;
   #workDir;
@@ -22,7 +22,7 @@ export class ProcessRun {
     this.#projectRepo = projectRepo || null;
     this.#chatEngine = chatEngine;
     this.#sessionRepo = sessionRepo;
-    this.#roleRegistry = roleRegistry;
+    this.#roleResolver = roleRegistry;
     this.#callbackSender = callbackSender;
     this.#gitOps = gitOps || null;
     this.#workDir = workDir || null;
@@ -45,8 +45,6 @@ export class ProcessRun {
     let task = null;
 
     try {
-      const role = this.#roleRegistry.get(run.roleName);
-
       // Resolve projectId from task
       task = run.taskId ? await this.#taskRepo.findById(run.taskId) : null;
       const projectId = task ? task.projectId : run.taskId;
@@ -83,6 +81,9 @@ export class ProcessRun {
         ? await this.#projectRepo.findById(task.projectId)
         : null;
       const effectiveWorkDir = await resolveWorkDir({ project, fallback: this.#workDir });
+
+      // Resolve role with project-level override (must be after workDir resolution)
+      const role = await this.#roleResolver.resolve(run.roleName, effectiveWorkDir);
 
       // Guard: branch prefix must match project prefix
       if (task?.branchName && project?.prefix) {
