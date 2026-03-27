@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { createPool, closePool } from './infrastructure/persistence/pg.js';
 import { loadRoles } from './infrastructure/roles/fileRoleLoader.js';
 import { RoleRegistry } from './domain/services/RoleRegistry.js';
+import { ProjectAwareRoleResolver } from './infrastructure/roles/projectAwareRoleResolver.js';
 import { TaskService } from './domain/services/TaskService.js';
 import { RunService } from './domain/services/RunService.js';
 import { PgTaskRepo } from './infrastructure/persistence/PgTaskRepo.js';
@@ -91,6 +92,7 @@ async function main() {
     roleRegistry.register(role);
   }
   console.log('[init] Loaded %d roles: %s', roles.length, roles.map(r => r.name).join(', '));
+  const roleResolver = new ProjectAwareRoleResolver({ roleRegistry, logger: console });
 
   // 4. Repos
   const taskRepo = new PgTaskRepo();
@@ -129,7 +131,7 @@ async function main() {
   console.log('[init] MCP config written to %s', mcpConfigPath);
 
   const chatEngine = new ClaudeCLIAdapter({
-    roleRegistry,
+    roleRegistry: roleResolver,
     workDir: config.workDir,
     mcpConfigPath,
   });
@@ -143,7 +145,7 @@ async function main() {
   const gitOps = new GitCLIAdapter({ logger: console });
   const startNextPendingTask = new StartNextPendingTask({ taskRepo, runService, roleRegistry });
   const createTask = new CreateTask({ taskService, runService, roleRegistry, projectRepo, taskRepo, callbackSender, gitOps, workDir: config.workDir });
-  const processRun = new ProcessRun({ runRepo, runService, taskRepo, projectRepo, chatEngine, sessionRepo, roleRegistry, callbackSender, gitOps, workDir: config.workDir, runAbortRegistry, logger: console });
+  const processRun = new ProcessRun({ runRepo, runService, taskRepo, projectRepo, chatEngine, sessionRepo, roleRegistry: roleResolver, callbackSender, gitOps, workDir: config.workDir, runAbortRegistry, logger: console });
   const managerDecision = new ManagerDecision({ runService, taskService, chatEngine, roleRegistry, callbackSender, runRepo, sessionRepo, projectRepo, gitOps, workDir: config.workDir, logger: console, startNextPendingTask });
   const getTaskStatus = new GetTaskStatus({ taskService, runRepo, projectRepo });
   const getRunDetail = new GetRunDetail({ taskService, runRepo });

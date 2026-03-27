@@ -25,6 +25,18 @@ function createFakeProc() {
   return proc;
 }
 
+/**
+ * Wraps RoleRegistry to satisfy IRoleResolver interface (async resolve()).
+ */
+function wrapAsResolver(registry) {
+  return {
+    resolve: async (roleName, _projectWorkDir = null) => registry.get(roleName),
+  };
+}
+
+/** Flush microtask queue (needed because resolve() is async with fake timers). */
+const flush = () => vi.advanceTimersByTimeAsync(0);
+
 describe('ClaudeCLIAdapter', () => {
   let registry;
   let adapter;
@@ -56,7 +68,7 @@ describe('ClaudeCLIAdapter', () => {
     };
 
     adapter = new ClaudeCLIAdapter({
-      roleRegistry: registry,
+      roleRegistry: wrapAsResolver(registry),
       workDir: '/tmp/test-workdir',
       logger,
     });
@@ -72,6 +84,7 @@ describe('ClaudeCLIAdapter', () => {
     mockSpawn.mockReturnValue(proc);
 
     const promise = adapter.runPrompt('developer', 'implement feature X');
+    await flush();
 
     // Simulate successful JSON response
     const jsonResponse = JSON.stringify({
@@ -115,6 +128,7 @@ describe('ClaudeCLIAdapter', () => {
     const promise = adapter.runPrompt('developer', 'continue', {
       sessionId: 'existing-session',
     });
+    await flush();
 
     const jsonResponse = JSON.stringify({
       result: 'Continued',
@@ -137,6 +151,7 @@ describe('ClaudeCLIAdapter', () => {
     mockSpawn.mockReturnValue(proc);
 
     const promise = adapter.runPrompt('developer', 'hello');
+    await flush();
 
     proc.stdout.emit('data', Buffer.from(JSON.stringify({ result: 'Hi', session_id: 's1' })));
     proc.emit('close', 0);
@@ -152,6 +167,7 @@ describe('ClaudeCLIAdapter', () => {
     mockSpawn.mockReturnValue(proc);
 
     const promise = adapter.runPrompt('analyst', 'analyze this');
+    await flush();
 
     proc.stdout.emit('data', Buffer.from(JSON.stringify({ result: 'Analysis done', session_id: 's2' })));
     proc.emit('close', 0);
@@ -208,6 +224,7 @@ describe('ClaudeCLIAdapter', () => {
     const promise = adapter.runPrompt('developer', 'abortable task', {
       signal: controller.signal,
     });
+    await flush();
 
     controller.abort();
 
@@ -232,6 +249,7 @@ describe('ClaudeCLIAdapter', () => {
     mockSpawn.mockReturnValue(proc);
 
     const promise = adapter.runPrompt('developer', 'test');
+    await flush();
 
     proc.stdout.emit('data', Buffer.from('{"result":"hello world"'));
     proc.stdout.emit('data', Buffer.from(',"session_id":"abc-123"}'));
@@ -247,6 +265,7 @@ describe('ClaudeCLIAdapter', () => {
     mockSpawn.mockReturnValue(proc);
 
     const promise = adapter.runPrompt('developer', 'bad');
+    await flush();
 
     proc.stderr.emit('data', Buffer.from('something went wrong'));
     proc.emit('close', 1);
@@ -259,6 +278,7 @@ describe('ClaudeCLIAdapter', () => {
     mockSpawn.mockReturnValue(proc);
 
     const promise = adapter.runPrompt('developer', 'error');
+    await flush();
 
     proc.stdout.emit('data', Buffer.from(JSON.stringify({
       is_error: true,
@@ -274,6 +294,7 @@ describe('ClaudeCLIAdapter', () => {
     mockSpawn.mockReturnValue(proc);
 
     const promise = adapter.runPrompt('developer', 'empty');
+    await flush();
 
     proc.stdout.emit('data', Buffer.from(JSON.stringify({ result: '', session_id: 's1' })));
     proc.emit('close', 0);
@@ -286,6 +307,7 @@ describe('ClaudeCLIAdapter', () => {
     mockSpawn.mockReturnValue(proc);
 
     const promise = adapter.runPrompt('developer', 'raw');
+    await flush();
 
     proc.stdout.emit('data', Buffer.from('plain text response'));
     proc.emit('close', 0);
@@ -303,6 +325,7 @@ describe('ClaudeCLIAdapter', () => {
     mockSpawn.mockReturnValue(proc);
 
     const promise = adapter.runPrompt('developer', 'test');
+    await flush();
 
     proc.emit('error', new Error('ENOENT'));
 
@@ -317,7 +340,7 @@ describe('ClaudeCLIAdapter', () => {
 
   it('adds --mcp-config when mcpConfigPath set and runId+taskId provided', async () => {
     const adapterWithMcp = new ClaudeCLIAdapter({
-      roleRegistry: registry,
+      roleRegistry: wrapAsResolver(registry),
       workDir: '/tmp/test-workdir',
       logger,
       mcpConfigPath: '/tmp/neuroforge-mcp/mcp-config.json',
@@ -330,6 +353,7 @@ describe('ClaudeCLIAdapter', () => {
       runId: 'run-42',
       taskId: 'task-99',
     });
+    await flush();
 
     proc.stdout.emit('data', Buffer.from(JSON.stringify({ result: 'ok', session_id: 's1' })));
     proc.emit('close', 0);
@@ -349,6 +373,7 @@ describe('ClaudeCLIAdapter', () => {
       runId: 'run-42',
       taskId: 'task-99',
     });
+    await flush();
 
     proc.stdout.emit('data', Buffer.from(JSON.stringify({ result: 'ok', session_id: 's1' })));
     proc.emit('close', 0);
@@ -361,7 +386,7 @@ describe('ClaudeCLIAdapter', () => {
 
   it('does not add --mcp-config without runId/taskId', async () => {
     const adapterWithMcp = new ClaudeCLIAdapter({
-      roleRegistry: registry,
+      roleRegistry: wrapAsResolver(registry),
       workDir: '/tmp/test-workdir',
       logger,
       mcpConfigPath: '/tmp/neuroforge-mcp/mcp-config.json',
@@ -371,6 +396,7 @@ describe('ClaudeCLIAdapter', () => {
     mockSpawn.mockReturnValue(proc);
 
     const promise = adapterWithMcp.runPrompt('developer', 'no run context');
+    await flush();
 
     proc.stdout.emit('data', Buffer.from(JSON.stringify({ result: 'ok', session_id: 's1' })));
     proc.emit('close', 0);
@@ -386,6 +412,7 @@ describe('ClaudeCLIAdapter', () => {
     mockSpawn.mockReturnValue(proc);
 
     const promise = adapter.runPrompt('developer', 'test');
+    await flush();
 
     proc.stdout.emit('data', Buffer.from(JSON.stringify({ result: 'ok', session_id: 's1' })));
     proc.emit('close', 0);
