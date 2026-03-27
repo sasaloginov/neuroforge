@@ -306,7 +306,7 @@ async function main() {
     console.log('  (save it — it will not be shown again)');
     console.log();
     console.log('  Next step — run the onboarder agent:');
-    console.log(`  cd "${args.workDir}" && claude -p "Выполни онбординг проекта" --system-prompt "${NEUROFORGE_ROOT}/roles/onboarder.md"`);
+    console.log(`  cd "${args.workDir}" && claude -p "Выполни онбординг проекта" --system-prompt "${NEUROFORGE_ROOT}/.neuroforge/roles/onboarder.md"`);
     console.log();
   } catch (err) {
     console.error(`\nError: ${err.message}`);

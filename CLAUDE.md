@@ -18,19 +18,14 @@
 
 ## Project Structure
 ```
-roles/                           # определения ролей (source of truth)
-├── analyst.md                   # исследование + проектирование (opus)
-├── developer.md                 # реализация кода (opus)
-├── reviewer.md                  # единое ревью: архитектура + бизнес + безопасность (sonnet)
-├── pm.md                        # PM-оркестратор для edge cases (sonnet)
-├── manager.md                   # legacy manager (не используется в v2)
-├── reviewer-architecture.md     # legacy (не используется в v2)
-├── reviewer-business.md         # legacy (не используется в v2)
-├── reviewer-security.md         # legacy (не используется в v2)
-└── tester.md                    # legacy (не используется в v2)
-
 .neuroforge/                     # системная папка Нейроцеха
 ├── config.json                  # метаданные проекта (стек, команды, описание)
+├── roles/                       # определения ролей (source of truth)
+│   ├── analyst.md               # исследование + проектирование (opus)
+│   ├── developer.md             # реализация кода (opus)
+│   ├── reviewer.md              # единое ревью: архитектура + бизнес + безопасность (sonnet)
+│   ├── pm.md                    # PM-оркестратор для edge cases (sonnet)
+│   └── ...                      # legacy роли (manager, tester и др.)
 └── docs/                        # артефакты задач
     └── <shortId>/               # research/, design/spec.md, context.md
 

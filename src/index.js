@@ -45,7 +45,7 @@ async function main() {
     port: parseInt(process.env.PORT || '3000', 10),
     host: process.env.HOST || '0.0.0.0',
     databaseUrl: process.env.DATABASE_URL,
-    rolesDir: process.env.ROLES_DIR || new URL('../roles', import.meta.url).pathname,
+    rolesDir: process.env.ROLES_DIR || new URL('../.neuroforge/roles', import.meta.url).pathname,
     workDir: process.env.WORKSPACE_DIR || process.cwd(),
     manager: {
       intervalMs: parseInt(process.env.MANAGER_INTERVAL_MS || '10000', 10),
