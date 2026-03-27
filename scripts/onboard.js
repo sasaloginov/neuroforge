@@ -172,6 +172,7 @@ async function confirmParams(params) {
 function scaffoldStructure(workDir, projectMeta) {
   const neuroforgeDir = resolve(workDir, '.neuroforge');
   mkdirSync(neuroforgeDir, { recursive: true });
+  mkdirSync(resolve(neuroforgeDir, 'docs'), { recursive: true });
 
   // Write project.json metadata
   writeFileSync(

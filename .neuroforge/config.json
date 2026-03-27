@@ -1,0 +1,6 @@
+{
+  "name": "neuroforge",
+  "stack": ["node.js", "fastify", "postgresql", "knex"],
+  "testCommand": "npx vitest run",
+  "description": "API-сервер для оркестрации AI-агентов"
+}

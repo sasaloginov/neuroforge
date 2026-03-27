@@ -29,9 +29,12 @@ roles/                           # определения ролей (source of 
 ├── reviewer-security.md         # legacy (не используется в v2)
 └── tester.md                    # legacy (не используется в v2)
 
+.neuroforge/                     # системная папка Нейроцеха
+├── config.json                  # метаданные проекта (стек, команды, описание)
+└── docs/                        # артефакты задач
+    └── <shortId>/               # research/, design/spec.md, context.md
+
 docs/
-├── analyst/                     # рабочая папка аналитика
-│   └── <shortId>/               # артефакты по задаче (research/, design/spec.md, context.md)
 ├── task/                        # определения задач (TASK.md)
 ├── adr/                         # architecture decision records
 ├── architecture/
@@ -61,7 +64,7 @@ src/
 
 | Роль | Модель | Что делает |
 |------|--------|-----------|
-| **analyst** | opus | Исследует проект, создаёт research, spec, context.md в `docs/analyst/<shortId>/` |
+| **analyst** | opus | Исследует проект, создаёт research, spec, context.md в `.neuroforge/docs/<shortId>/` |
 | **developer** | opus | Реализует код по спецификации. Resume'ит CLI-сессию analyst'а (shared context) |
 | **reviewer** | sonnet | Единое ревью по 3 направлениям: архитектура (DDD/SOLID), бизнес-логика (AC), безопасность (OWASP) |
 
@@ -88,9 +91,9 @@ CreateTask
 ```
 
 ### Артефакты аналитика
-Всё строго в `docs/analyst/<shortId>/`:
+Всё строго в `.neuroforge/docs/<shortId>/`:
 ```
-docs/analyst/<shortId>/
+.neuroforge/docs/<shortId>/
 ├── research/          # файлы исследований
 │   └── <slug>.md
 ├── design/

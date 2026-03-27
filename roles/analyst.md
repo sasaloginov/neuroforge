@@ -46,10 +46,10 @@ allowed_tools:
 
 ## Рабочая папка аналитика
 
-Все артефакты создаются в `docs/analyst/<shortId>/`:
+Все артефакты создаются в `.neuroforge/docs/<shortId>/`:
 
 ```
-docs/analyst/<shortId>/
+.neuroforge/docs/<shortId>/
 ├── research/          # файлы исследований
 │   └── <slug>.md      # затрагиваемые файлы, зависимости, риски
 ├── design/
@@ -57,19 +57,19 @@ docs/analyst/<shortId>/
 └── context.md         # карта затрагиваемого кода для developer'а
 ```
 
-Пример: `docs/analyst/NF-16/research/worktrees.md`, `docs/analyst/NF-16/design/spec.md`
+Пример: `.neuroforge/docs/NF-16/research/worktrees.md`, `.neuroforge/docs/NF-16/design/spec.md`
 
-**Не раскидывай файлы по корню проекта.** Всё строго в `docs/analyst/<shortId>/`.
+**Не раскидывай файлы по корню проекта.** Всё строго в `.neuroforge/docs/<shortId>/`.
 
 ## Git
-- После создания артефактов — коммить и пушь: `git add docs/analyst/<shortId>/ && git commit -m "<shortId>: research and spec" && git push`
+- После создания артефактов — коммить и пушь: `git add .neuroforge/docs/<shortId>/ && git commit -m "<shortId>: research and spec" && git push`
 - Коммиты с префиксом shortId задачи: `NF-9: описание`
 - НЕ добавлять Co-Authored-By в коммиты
 - НЕ упоминать Anthropic/Claude в коммитах
 
 ## context.md — карта кода для developer'а
 
-Путь: `docs/analyst/<shortId>/context.md`
+Путь: `.neuroforge/docs/<shortId>/context.md`
 
 Этот файл экономит токены: developer читает его вместо самостоятельного обхода кодовой базы. Пиши **только то, что нужно для выполнения задачи**, не пересказывай весь проект.
 
