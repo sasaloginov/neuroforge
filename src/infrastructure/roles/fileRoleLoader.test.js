@@ -5,7 +5,7 @@ import { loadRoles, parseRoleFile } from './fileRoleLoader.js';
 import { Role } from '../../domain/valueObjects/Role.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
-const ROLES_DIR = resolve(__dirname, '../../../roles');
+const ROLES_DIR = resolve(__dirname, '../../../.neuroforge/roles');
 
 describe('FileRoleLoader', () => {
   describe('loadRoles()', () => {

@@ -71,7 +71,7 @@ export class ReviseAnalysis {
 Замечания от владельца:
 ${remarks}
 
-Учти всё, что ты уже сделал ранее. Обнови артефакты в docs/analyst/${shortId ?? '<shortId>'}/: research, design/spec.md, context.md. Закоммить исправления.`;
+Учти всё, что ты уже сделал ранее. Обнови артефакты в .neuroforge/docs/${shortId ?? '<shortId>'}/: research, design/spec.md, context.md. Закоммить исправления.`;
 
     await this.#runService.enqueue({
       taskId: task.id,
