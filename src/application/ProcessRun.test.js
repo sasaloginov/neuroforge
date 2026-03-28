@@ -81,6 +81,18 @@ describe('ProcessRun', () => {
     );
   });
 
+  it('passes projectId to chatEngine.runPrompt', async () => {
+    taskRepo.findById.mockResolvedValue({ id: 'task-1', projectId: 'proj-42' });
+
+    await processRun.execute();
+
+    expect(chatEngine.runPrompt).toHaveBeenCalledWith(
+      'analyst',
+      'Analyze this task',
+      expect.objectContaining({ projectId: 'proj-42' }),
+    );
+  });
+
   it('returns null when queue is empty', async () => {
     runRepo.takeNext.mockResolvedValue(null);
 

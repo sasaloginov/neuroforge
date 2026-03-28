@@ -12,6 +12,14 @@
  * @returns {{ mcpServers: object }}
  */
 export function buildMcpConfig({ mcpPort, secret, botMemoryUrl }) {
+  if (botMemoryUrl) {
+    try {
+      new URL(botMemoryUrl);
+    } catch {
+      throw new Error(`Invalid BOT_MEMORY_URL: ${botMemoryUrl}`);
+    }
+  }
+
   const mcpServers = {
     neuroforge: {
       type: 'sse',

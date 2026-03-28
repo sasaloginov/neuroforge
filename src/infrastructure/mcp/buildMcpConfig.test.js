@@ -51,4 +51,18 @@ describe('buildMcpConfig', () => {
 
     expect(config.mcpServers.neuroforge.url).toBe('http://localhost:4200/sse');
   });
+
+  it('throws on invalid botMemoryUrl', () => {
+    expect(() => buildMcpConfig({ ...baseParams, botMemoryUrl: 'not-a-url' }))
+      .toThrow('Invalid BOT_MEMORY_URL: not-a-url');
+  });
+
+  it('accepts valid botMemoryUrl with custom port', () => {
+    const config = buildMcpConfig({
+      ...baseParams,
+      botMemoryUrl: 'http://192.168.1.10:4000',
+    });
+
+    expect(config.mcpServers['bot-memory'].url).toBe('http://192.168.1.10:4000/sse');
+  });
 });
