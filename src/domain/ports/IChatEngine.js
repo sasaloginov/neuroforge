@@ -6,6 +6,7 @@
  * @property {string} [runId] - current run ID (used by MCP config for agent tools)
  * @property {string} [taskId] - current task ID (used by MCP config for agent tools)
  * @property {string} [workDir] - per-project working directory (overrides global)
+ * @property {string} [projectId] - project ID (passed to agent via append-system-prompt)
  */
 
 /**

@@ -407,6 +407,48 @@ describe('ClaudeCLIAdapter', () => {
     expect(args).not.toContain('--mcp-config');
   });
 
+  it('includes ProjectId in append-system-prompt when projectId is provided', async () => {
+    const proc = createFakeProc();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = adapter.runPrompt('developer', 'do work', {
+      projectId: 'proj-abc-123',
+    });
+    await flush();
+
+    proc.stdout.emit('data', Buffer.from(JSON.stringify({ result: 'ok', session_id: 's1' })));
+    proc.emit('close', 0);
+
+    await promise;
+
+    const args = mockSpawn.mock.calls[0][1];
+    const appendIdx = args.indexOf('--append-system-prompt');
+    expect(appendIdx).toBeGreaterThan(-1);
+    const appendValue = args[appendIdx + 1];
+    expect(appendValue).toContain('Project workspace: /tmp/test-workdir');
+    expect(appendValue).toContain('ProjectId: proj-abc-123');
+  });
+
+  it('does not include ProjectId in append-system-prompt when projectId is null', async () => {
+    const proc = createFakeProc();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = adapter.runPrompt('developer', 'do work');
+    await flush();
+
+    proc.stdout.emit('data', Buffer.from(JSON.stringify({ result: 'ok', session_id: 's1' })));
+    proc.emit('close', 0);
+
+    await promise;
+
+    const args = mockSpawn.mock.calls[0][1];
+    const appendIdx = args.indexOf('--append-system-prompt');
+    expect(appendIdx).toBeGreaterThan(-1);
+    const appendValue = args[appendIdx + 1];
+    expect(appendValue).toBe('Project workspace: /tmp/test-workdir');
+    expect(appendValue).not.toContain('ProjectId');
+  });
+
   it('uses spawn without shell option (security)', async () => {
     const proc = createFakeProc();
     mockSpawn.mockReturnValue(proc);
