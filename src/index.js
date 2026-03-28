@@ -18,6 +18,7 @@ import { PgApiKeyRepo } from './infrastructure/persistence/PgApiKeyRepo.js';
 import { ClaudeCLIAdapter } from './infrastructure/claude/claudeCLIAdapter.js';
 import { CallbackClient } from './infrastructure/callback/callbackClient.js';
 import { startMcpHttpServer } from './infrastructure/mcp/mcpServer.js';
+import { buildMcpConfig } from './infrastructure/mcp/buildMcpConfig.js';
 import { CreateTask } from './application/CreateTask.js';
 import { ProcessRun } from './application/ProcessRun.js';
 import { ManagerDecision } from './application/ManagerDecision.js';
@@ -115,17 +116,16 @@ async function main() {
   // 5b. Write a shared mcp-config.json pointing at the HTTP server (with auth token)
   const mcpTmpDir = await mkdtemp(join(tmpdir(), 'neuroforge-mcp-'));
   const mcpConfigPath = join(mcpTmpDir, 'mcp-config.json');
+  const botMemoryUrl = process.env.BOT_MEMORY_URL || null;
+  const mcpConfig = buildMcpConfig({ mcpPort, secret: mcpHttpServer.secret, botMemoryUrl });
+
+  if (botMemoryUrl) {
+    console.log('[init] Bot-memory MCP server configured: %s', botMemoryUrl);
+  }
+
   await writeFile(
     mcpConfigPath,
-    JSON.stringify({
-      mcpServers: {
-        neuroforge: {
-          type: 'sse',
-          url: `http://localhost:${mcpPort}/sse`,
-          headers: { Authorization: `Bearer ${mcpHttpServer.secret}` },
-        },
-      },
-    }, null, 2),
+    JSON.stringify(mcpConfig, null, 2),
     { encoding: 'utf-8', mode: 0o600 },
   );
   console.log('[init] MCP config written to %s', mcpConfigPath);

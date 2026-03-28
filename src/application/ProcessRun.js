@@ -112,6 +112,7 @@ export class ProcessRun {
         taskId: run.taskId,
         signal: abortController.signal,
         workDir: effectiveWorkDir,
+        projectId,
       });
 
       // Update session's cliSessionId if returned
